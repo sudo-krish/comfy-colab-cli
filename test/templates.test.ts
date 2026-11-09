@@ -34,3 +34,4 @@ describe('Golden Workflow Templates', () => {
     expect(getGoldenTemplate('non_existent')).toBeNull();
   });
 });
+

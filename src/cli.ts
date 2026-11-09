@@ -64,9 +64,7 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write('  up                  Spin up Colab VM with GPU, watchdog, and Drive\n');
   process.stdout.write('  stop                Terminate Colab session\n');
   process.stdout.write('  sessions            List active Colab sessions\n');
-  process.stdout.write(
-    '  image               Generate image from prompt with optional LoRA chain\n',
-  );
+  process.stdout.write('  image               Generate image from prompt with optional LoRA chain\n');
   process.stdout.write('  video               Generate video from prompt or reference image\n');
   process.stdout.write('  template list|show  Inspect golden API workflow templates\n');
   process.stdout.write('  run                 Orchestrate end-to-end headless workflow run\n');
