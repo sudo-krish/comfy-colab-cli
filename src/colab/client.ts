@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { COLAB_EXEC_TIMEOUT_SEC } from '../config/constants.js';
 import { parseComputeQuota } from '../doctor/doctor.js';
@@ -12,6 +12,41 @@ export interface CommandExecutionResult {
   exitCode: number;
 }
 
+function runWithSpawn(
+  binary: string,
+  args: string[],
+  input: string,
+  timeoutMs?: number,
+): Promise<CommandExecutionResult> {
+  return new Promise<CommandExecutionResult>((resolve) => {
+    const proc = spawn(binary, args, { timeout: timeoutMs });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout?.on('data', (c) => {
+      stdout += String(c);
+    });
+    proc.stderr?.on('data', (c) => {
+      stderr += String(c);
+    });
+    proc.on('error', (err) => {
+      resolve({
+        stdout: stdout.trim(),
+        stderr: stderr.trim() || err.message,
+        exitCode: 1,
+      });
+    });
+    proc.on('close', (code) => {
+      resolve({
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        exitCode: code ?? 0,
+      });
+    });
+    proc.stdin?.write(input);
+    proc.stdin?.end();
+  });
+}
+
 export class ColabCliClient {
   private readonly colabBinary: string;
 
@@ -19,7 +54,14 @@ export class ColabCliClient {
     this.colabBinary = colabBinary;
   }
 
-  public async runRaw(args: string[], timeoutMs?: number): Promise<CommandExecutionResult> {
+  public async runRaw(
+    args: string[],
+    timeoutMs?: number,
+    input?: string,
+  ): Promise<CommandExecutionResult> {
+    if (input !== undefined) {
+      return runWithSpawn(this.colabBinary, args, input, timeoutMs);
+    }
     try {
       const { stdout, stderr } = await execFileAsync(this.colabBinary, args, {
         timeout: timeoutMs,
@@ -103,14 +145,12 @@ export class ColabCliClient {
     sessionName?: string,
     timeoutSeconds: number = COLAB_EXEC_TIMEOUT_SEC,
   ): Promise<CommandExecutionResult> {
-    const escaped = codeSnippet.replace(/"/g, '\\"');
     const args = ['exec'];
     if (sessionName) {
       args.push('--session', sessionName);
     }
     args.push('--timeout', String(timeoutSeconds));
-    args.push(`python3 -c "${escaped}"`);
-    return this.runRaw(args, (timeoutSeconds + 5) * 1000);
+    return this.runRaw(args, (timeoutSeconds + 5) * 1000, codeSnippet);
   }
 
   public async upload(

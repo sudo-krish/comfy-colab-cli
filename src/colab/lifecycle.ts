@@ -28,36 +28,42 @@ export class ColabLifecycleManager {
   }
 
   public async start(options: StartEnvironmentOptions = {}): Promise<EnvironmentStatus> {
-    const createRes = await this.client.createSession({
-      sessionName: options.sessionName,
-      gpu: options.gpu,
-      highMem: options.highMem,
-    });
+    const sessionName = options.sessionName || 'comfy-session';
+    const sessions = await this.client.listSessions();
+    const existing = sessions.find((s) => s.sessionName === sessionName && s.status === 'active');
 
-    if (createRes.exitCode !== 0) {
-      return {
-        ok: false,
-        status: 'error',
-        details: createRes.stderr || createRes.stdout,
-      };
+    if (!existing) {
+      const createRes = await this.client.createSession({
+        sessionName,
+        gpu: options.gpu,
+        highMem: options.highMem,
+      });
+
+      if (createRes.exitCode !== 0) {
+        return {
+          ok: false,
+          status: 'error',
+          details: createRes.stderr || createRes.stdout,
+        };
+      }
     }
 
     if (options.mountDrive) {
-      await this.client.mountDrive('/content/drive', options.sessionName);
+      await this.client.mountDrive('/content/drive', sessionName);
     }
 
     if (options.bootstrapStorage) {
       const script = generateBootstrapScript();
-      await this.client.execCode(script, options.sessionName, 25);
+      await this.client.execCode(script, sessionName, 25);
     }
 
     const ttl = options.ttlMinutes ?? 20;
     const watchdogCode = generateWatchdogScript({ ttlMinutes: ttl });
-    await this.client.execCode(watchdogCode, options.sessionName, 10);
+    await this.client.execCode(watchdogCode, sessionName, 10);
 
     return {
       ok: true,
-      sessionName: options.sessionName || 'default',
+      sessionName,
       status: 'active',
       gpu: options.gpu,
     };

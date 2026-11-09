@@ -78,12 +78,15 @@ Every command executed with `--json` returns one of the following envelopes:
   `comfy-colab auth --json`
 
 ### Cloud Lifecycle Management
+Sessions are created and orchestrated directly by `comfy-colab` (you do not need to call raw `colab` commands). `comfy-colab run` will even auto-provision a session if none is currently active:
 - Spin up a Colab VM session with GPU and background idle watchdog:
   `comfy-colab up --gpu L4 --ttl 25 --mount-drive --json`
 - Terminate an active Colab session immediately:
   `comfy-colab stop --session <session_id> --json`
 - List all active sessions and statuses:
   `comfy-colab sessions --json`
+- Print or open browser notebook URL attached to VM kernel:
+  `comfy-colab url [--session <session_id>] [--open] --json`
 - Initialize persistent Google Drive directory scaffolding:
   `comfy-colab setup --json`
 

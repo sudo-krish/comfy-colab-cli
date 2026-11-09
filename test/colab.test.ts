@@ -113,4 +113,15 @@ describe('ColabCliClient & In-Kernel Watchdog', () => {
     expect(sessions[1]?.sessionName).toBe('another-sess');
     expect(sessions[1]?.status).toBe('unknown');
   });
+
+  it('handles runRaw with input using spawn', async () => {
+    const client = new ColabCliClient('cat');
+    const res = await client.runRaw([], undefined, 'hello from stdin');
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toBe('hello from stdin');
+
+    const badClient = new ColabCliClient('nonexistent-binary-xyz');
+    const badRes = await badClient.runRaw([], undefined, 'test');
+    expect(badRes.exitCode).toBe(1);
+  });
 });

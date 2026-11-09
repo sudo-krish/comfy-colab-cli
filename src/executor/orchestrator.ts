@@ -70,6 +70,34 @@ function resolveBaseWorkflow(options: OrchestrationOptions): ComfyApiWorkflow {
   });
 }
 
+async function ensureSessionActive(
+  lifecycle: ColabLifecycleManager,
+  sessionName: string,
+  gpu?: GpuType,
+): Promise<{ ok: boolean; error?: string }> {
+  const sessions = await lifecycle.list();
+  const isActive = sessions.some((s) => s.sessionName === sessionName && s.status === 'active');
+  if (isActive) {
+    return { ok: true };
+  }
+
+  const startRes = await lifecycle.start({
+    sessionName,
+    gpu: gpu || 'L4',
+    mountDrive: true,
+    bootstrapStorage: true,
+    ttlMinutes: 20,
+  });
+
+  if (!startRes.ok) {
+    return {
+      ok: false,
+      error: `Failed to initialize Colab session '${sessionName}': ${startRes.details || 'Unknown error'}`,
+    };
+  }
+  return { ok: true };
+}
+
 export async function runOrchestration(
   options: OrchestrationOptions,
   client?: ColabCliClient,
@@ -77,10 +105,23 @@ export async function runOrchestration(
   const colabClient = client ?? new ColabCliClient();
   const lifecycle = new ColabLifecycleManager(colabClient);
   const runner = new ComfyWorkflowRunner(colabClient);
+  const sessionName = options.sessionName || 'comfy-session';
+
+  const sessionCheck = await ensureSessionActive(lifecycle, sessionName, options.gpu);
+  if (!sessionCheck.ok) {
+    return {
+      ok: false,
+      jobId: '',
+      outputs: [],
+      cloudWiped: false,
+      sessionTerminated: false,
+      error: sessionCheck.error,
+    };
+  }
 
   if (options.hotCache) {
     const hotScript = buildHotCacheScript(options.hotCache);
-    await colabClient.execCode(hotScript, options.sessionName, 30);
+    await colabClient.execCode(hotScript, sessionName, 30);
   }
 
   let workflow = resolveBaseWorkflow(options);
@@ -89,14 +130,14 @@ export async function runOrchestration(
   }
 
   const result = await runner.run({
-    sessionName: options.sessionName,
+    sessionName,
     workflow,
     outputsDir: options.outputDir || DEFAULT_OUTPUTS_DIR,
   });
 
   let sessionTerminated = false;
   if (options.ephemeral) {
-    const stopRes = await lifecycle.stop(options.sessionName);
+    const stopRes = await lifecycle.stop(sessionName);
     sessionTerminated = stopRes.ok;
   }
 
