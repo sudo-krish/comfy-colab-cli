@@ -1,0 +1,20 @@
+# ==============================================================================
+# lefthook.yml — Shift-Left Git Hook Pipeline
+# ==============================================================================
+
+pre-commit:
+  parallel: false
+  commands:
+    01-check-branch:
+      run: make check-branch
+    02-format:
+      run: make format-check
+    03-lint:
+      run: make lint
+    04-type-check:
+      run: make type-check
+
+commit-msg:
+  commands:
+    check-branch:
+      run: make check-branch

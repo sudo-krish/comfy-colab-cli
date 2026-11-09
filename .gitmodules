@@ -1,0 +1,3 @@
+[submodule ".makelib"]
+	path = .makelib
+	url = git@github.com:sudo-krish/makelib-node.git

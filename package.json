@@ -1,0 +1,43 @@
+{
+  "name": "comfy-colab-cli",
+  "version": "0.1.0",
+  "description": "Headless CLI and AI agent skill to spin up ComfyUI on Google Colab, execute API workflows, and auto-terminate GPU sessions",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "comfy-colab": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "make build",
+    "test": "make test",
+    "check-all": "make check-all"
+  },
+  "keywords": [
+    "comfyui",
+    "google-colab",
+    "cli",
+    "ai-agent",
+    "automation",
+    "headless"
+  ],
+  "author": "Krish <sudo-krish>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sudo-krish/comfy-colab-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sudo-krish/comfy-colab-cli/issues"
+  },
+  "homepage": "https://github.com/sudo-krish/comfy-colab-cli#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

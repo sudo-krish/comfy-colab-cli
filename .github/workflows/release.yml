@@ -1,0 +1,146 @@
+name: Release & Deployment Pipeline
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      override_level:
+        description: 'Manual release level override'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: read
+  id-token: write
+
+jobs:
+  release:
+    name: Build, Tag Release, and Publish to NPM
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure Git for SSH/HTTPS submodules
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout repository with submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org/'
+          cache: 'npm'
+
+      - name: Setup Python for detect-secrets
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install detect-secrets
+        run: |
+          python -m pip install --upgrade pip
+          pip install detect-secrets
+
+      - name: Install makelib toolchain
+        run: make makelib-install
+
+      - name: Run 8-Stage Quality Gate Pipeline
+        run: make check-all
+
+      - name: Compile Production Bundle
+        run: make build
+
+      - name: Calculate Next SemVer Version
+        id: semver
+        run: |
+          OVERRIDE="${{ github.event.inputs.override_level || '' }}"
+          SOURCE_BRANCH="${{ github.event.pull_request.head.ref || '' }}"
+          if [ -n "$OVERRIDE" ] && [ "$OVERRIDE" != "auto" ]; then
+            NEW_VER=$(bash .makelib/scripts/semver-release.sh --next-version --level "$OVERRIDE")
+          elif [ -n "$SOURCE_BRANCH" ]; then
+            NEW_VER=$(bash .makelib/scripts/semver-release.sh --next-version --branch "$SOURCE_BRANCH")
+          else
+            NEW_VER=$(bash .makelib/scripts/semver-release.sh --next-version)
+          fi
+          echo "version=$NEW_VER" >> $GITHUB_OUTPUT
+          echo "Calculated next version: v$NEW_VER"
+
+      - name: Configure Git Committer
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply Version Bump and Commit
+        run: |
+          NEW_VERSION="${{ steps.semver.outputs.version }}"
+          bash .makelib/scripts/semver-release.sh --apply "${NEW_VERSION}"
+          git add package.json package-lock.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): v${NEW_VERSION} [skip ci]" --no-verify
+            git push origin HEAD:main
+          fi
+
+      - name: Push Git Release Tag
+        run: |
+          NEW_VERSION="${{ steps.semver.outputs.version }}"
+          if ! git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
+            git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          fi
+          echo "Pushing release tag v${NEW_VERSION} to origin..."
+          git push origin "v${NEW_VERSION}" || echo "Tag already pushed, continuing."
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.semver.outputs.version }}"
+          ASSETS=()
+          if [ -d "dist" ] && [ -n "$(ls -A dist 2>/dev/null)" ]; then
+            tar -czf "dist-v${NEW_VERSION}.tar.gz" -C dist .
+            ASSETS=("dist-v${NEW_VERSION}.tar.gz")
+          fi
+          if gh release view "v${NEW_VERSION}" >/dev/null 2>&1; then
+            echo "Release v${NEW_VERSION} already exists; uploading assets..."
+            if [ ${#ASSETS[@]} -gt 0 ]; then
+              gh release upload "v${NEW_VERSION}" "${ASSETS[@]}" --clobber
+            fi
+          else
+            gh release create "v${NEW_VERSION}" "${ASSETS[@]}" \
+              --title "Release v${NEW_VERSION}" \
+              --generate-notes
+          fi
+
+      - name: Publish Package to NPM Registry
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ] && [ -f "package.json" ]; then
+            IS_PRIVATE=$(node -p "Boolean(require('./package.json').private)" 2>/dev/null || echo "true")
+            if [ "$IS_PRIVATE" != "true" ]; then
+              echo "Configuring npm auth token..."
+              echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+              echo "Publishing package to npm..."
+              npm publish --access public --provenance || npm publish --access public
+              echo "Package successfully published to npm registry!"
+            else
+              echo "package.json is marked private; skipping npm publish."
+            fi
+          else
+            echo "::warning::NPM_TOKEN secret not configured or package is private; skipping npm publish step."
+            echo "To enable automated NPM publishing, add 'NPM_TOKEN' to repository secrets (Settings -> Secrets and variables -> Actions)."
+          fi

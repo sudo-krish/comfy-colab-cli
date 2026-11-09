@@ -1,0 +1,92 @@
+name: CI Quality Gate
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  branch-policy:
+    name: Shift-Left Branch Policy Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Validate Branch Naming Standard
+        run: |
+          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+          echo "Evaluating branch name: ${BRANCH_NAME}"
+          if [[ ! "${BRANCH_NAME}" =~ ^(feat|feature|fix|patch|major|breaking|docs|chore|refactor|ci)/[a-z0-9._-]+$ ]]; then
+            echo "::error::Branch '${BRANCH_NAME}' violates shift-left branch naming policy."
+            echo "Expected format: <type>/<description> where type in [feat, fix, patch, major, breaking, docs, chore, refactor, ci]"
+            exit 1
+          fi
+          echo "Branch naming conforms to standard."
+
+  quality:
+    name: 8-Stage Quality Gate Pipeline
+    needs: branch-policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure Git for SSH/HTTPS submodules
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout repository with submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Python for detect-secrets
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install detect-secrets
+        run: |
+          python -m pip install --upgrade pip
+          pip install detect-secrets
+
+      - name: Install makelib toolchain
+        run: make makelib-install
+
+      - name: Verify Code Formatting
+        run: make format-check
+
+      - name: Run all 8 quality gates
+        run: make check-all
+
+      - name: Compile Production Bundle
+        run: make build
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-bundle
+          path: dist/
+          retention-days: 14
+
+      - name: Upload Test Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
