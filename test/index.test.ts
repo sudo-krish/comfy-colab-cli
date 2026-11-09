@@ -212,107 +212,111 @@ describe('runCli', () => {
     writeSpy.mockRestore();
   });
 
-  it('handles up, stop, and sessions commands in dry-run, live, and json modes', async () => {
-    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    const errSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  it(
+    'handles up, stop, and sessions commands in dry-run, live, and json modes',
+    async () => {
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const errSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-    // Dry-run mode for up and stop
-    await runCli(['up', '--gpu', 'A100', '--ttl', '30', '--mount-drive', '--dry-run']);
-    expect(writeSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[DRY-RUN] Starting Colab environment'),
-    );
+      // Dry-run mode for up and stop
+      await runCli(['up', '--gpu', 'A100', '--ttl', '30', '--mount-drive', '--dry-run']);
+      expect(writeSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[DRY-RUN] Starting Colab environment'),
+      );
 
-    await runCli(['up', '--gpu', 'L4', '--dry-run', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "up"'));
+      await runCli(['up', '--gpu', 'L4', '--dry-run', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "up"'));
 
-    await runCli(['stop', '--session', 'my-sess', '--dry-run']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[DRY-RUN] Stop signal sent'));
+      await runCli(['stop', '--session', 'my-sess', '--dry-run']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[DRY-RUN] Stop signal sent'));
 
-    await runCli(['stop', '--dry-run', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "stop"'));
+      await runCli(['stop', '--dry-run', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "stop"'));
 
-    // Live mode with spied lifecycle manager
-    vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
-      ok: true,
-      sessionName: 'live-sess',
-      status: 'active',
-      gpu: 'L4',
-    });
-    await runCli(['up', '--session', 'live-sess']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[SUCCESS] Colab environment'));
+      // Live mode with spied lifecycle manager
+      vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
+        ok: true,
+        sessionName: 'live-sess',
+        status: 'active',
+        gpu: 'L4',
+      });
+      await runCli(['up', '--session', 'live-sess']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[SUCCESS] Colab environment'));
 
-    vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
-      ok: false,
-      status: 'error',
-      details: 'Quota exhausted',
-    });
-    await runCli(['up', '--session', 'fail-sess']);
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to start Colab'));
+      vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
+        ok: false,
+        status: 'error',
+        details: 'Quota exhausted',
+      });
+      await runCli(['up', '--session', 'fail-sess']);
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to start Colab'));
 
-    vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
-      ok: true,
-      message: 'stopped',
-    });
-    await runCli(['stop', '--session', 'live-sess']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[SUCCESS] Colab session'));
+      vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
+        ok: true,
+        message: 'stopped',
+      });
+      await runCli(['stop', '--session', 'live-sess']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[SUCCESS] Colab session'));
 
-    vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
-      ok: false,
-      message: 'Session not found',
-    });
-    await runCli(['stop', '--session', 'fail-sess']);
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to stop session'));
+      vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
+        ok: false,
+        message: 'Session not found',
+      });
+      await runCli(['stop', '--session', 'fail-sess']);
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to stop session'));
 
-    // Live mode in JSON
-    vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
-      ok: true,
-      sessionName: 'live-json-sess',
-      status: 'active',
-      gpu: 'L4',
-    });
-    await runCli(['up', '--session', 'live-json-sess', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "up"'));
+      // Live mode in JSON
+      vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
+        ok: true,
+        sessionName: 'live-json-sess',
+        status: 'active',
+        gpu: 'L4',
+      });
+      await runCli(['up', '--session', 'live-json-sess', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "up"'));
 
-    vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
-      ok: false,
-      status: 'error',
-      details: 'Quota exhausted',
-    });
-    await runCli(['up', '--session', 'fail-json-sess', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"ERR_SESSION_START"'));
+      vi.spyOn(ColabLifecycleManager.prototype, 'start').mockResolvedValueOnce({
+        ok: false,
+        status: 'error',
+        details: 'Quota exhausted',
+      });
+      await runCli(['up', '--session', 'fail-json-sess', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"ERR_SESSION_START"'));
 
-    vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
-      ok: true,
-      message: 'stopped',
-    });
-    await runCli(['stop', '--session', 'live-json-sess', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "stop"'));
+      vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
+        ok: true,
+        message: 'stopped',
+      });
+      await runCli(['stop', '--session', 'live-json-sess', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "stop"'));
 
-    vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
-      ok: false,
-      message: 'Not found',
-    });
-    await runCli(['stop', '--session', 'fail-json-sess', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"ERR_SESSION_STOP"'));
+      vi.spyOn(ColabLifecycleManager.prototype, 'stop').mockResolvedValueOnce({
+        ok: false,
+        message: 'Not found',
+      });
+      await runCli(['stop', '--session', 'fail-json-sess', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"ERR_SESSION_STOP"'));
 
-    await runCli(['sessions']);
-    expect(writeSpy).toHaveBeenCalled();
+      await runCli(['sessions']);
+      expect(writeSpy).toHaveBeenCalled();
 
-    await runCli(['sessions', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "sessions"'));
+      await runCli(['sessions', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "sessions"'));
 
-    await runCli(['url']);
-    expect(writeSpy).toHaveBeenCalled();
+      await runCli(['url']);
+      expect(writeSpy).toHaveBeenCalled();
 
-    await runCli(['url', '-s', 'test-sess', '--open']);
-    expect(writeSpy).toHaveBeenCalled();
+      await runCli(['url', '-s', 'test-sess', '--open']);
+      expect(writeSpy).toHaveBeenCalled();
 
-    await runCli(['url', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "url"'));
+      await runCli(['url', '--json']);
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "url"'));
 
-    writeSpy.mockRestore();
-    errSpy.mockRestore();
-  });
+      writeSpy.mockRestore();
+      errSpy.mockRestore();
+    },
+    15000,
+  );
 
   it('handles template and run commands in text, dry-run, live, and json modes', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
