@@ -4,6 +4,7 @@ import {
   buildListModelsScript,
   buildHotCacheScript,
   buildPullModelScript,
+  buildRefreshModelsScript,
 } from '../src/storage/models.js';
 
 describe('Storage Bootstrap & Model Manager Scripts', () => {
@@ -36,9 +37,15 @@ describe('Storage Bootstrap & Model Manager Scripts', () => {
     const script = buildPullModelScript(
       'https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors',
       'checkpoints',
-      'hf_secret_token_abc',
+      'dummy-hf-token', // pragma: whitelist secret
     );
-    expect(script).toContain('Bearer hf_secret_token_abc');
+    expect(script).toContain('Bearer dummy-hf-token');
     expect(script).toContain('flux1-dev.safetensors');
+  });
+
+  it('generates refresh models script targeting ComfyUI endpoint', () => {
+    const script = buildRefreshModelsScript();
+    expect(script).toContain('http://127.0.0.1:8188/refresh');
+    expect(script).toContain('[REFRESH]');
   });
 });

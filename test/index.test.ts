@@ -97,16 +97,94 @@ describe('runCli', () => {
     writeSpy.mockRestore();
   });
 
-  it('prepares image workflow in text and json modes', () => {
+  it('prepares image workflow in text and json modes with overrides', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
-    runCli(['image', '--prompt', 'cybernetic astronaut', '--lora', 'neon.safetensors:0.8']);
+    runCli([
+      'image',
+      '--prompt',
+      'cybernetic astronaut',
+      '--lora',
+      'neon.safetensors:0.8',
+      '--set',
+      '5.inputs.steps=30',
+    ]);
     expect(writeSpy).toHaveBeenCalledWith(
       expect.stringContaining('[INFO] Image workflow prepared'),
     );
 
     runCli(['image', '--prompt', 'cybernetic astronaut', '--json']);
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "image"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('prepares video workflow in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['video', '--prompt', 'drone flying over ocean', '--gpu', 'T4']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[WARN]'));
+
+    runCli(['video', '--prompt', 'drone flying over ocean', '--gpu', 'L4', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "video"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('handles models commands in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['models', 'list', '--type', 'checkpoints']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] Models inventory ready'));
+
+    runCli(['models', 'list', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "models:list"'));
+
+    runCli(['models', 'pull', 'https://hf.co/model.safetensors', '--type', 'loras']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] Model pull task ready'));
+
+    runCli(['models', 'pull', 'https://hf.co/model.safetensors', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "models:pull"'));
+
+    runCli(['models', 'upload', './my_lora.safetensors', '--type', 'loras']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Model upload task ready'),
+    );
+
+    runCli(['models', 'upload', './my_lora.safetensors', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "models:upload"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('handles snapshot commands in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['snapshot', 'save', 'my_backup']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] Snapshot save prepared'));
+
+    runCli(['snapshot', 'save', 'my_backup', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "snapshot:save"'));
+
+    runCli(['snapshot', 'restore', '123_my_backup.json']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Snapshot restore prepared'),
+    );
+
+    runCli(['snapshot', 'restore', '123_my_backup.json', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "snapshot:restore"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('handles update command in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['update', '--target', 'cli']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] Update initiated'));
+
+    runCli(['update', '--target', 'all', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "update"'));
 
     writeSpy.mockRestore();
   });
