@@ -178,3 +178,16 @@ export async function executeWorkflow(
     cloudWiped: true,
   };
 }
+
+export class ComfyWorkflowRunner {
+  private readonly client: ColabCliClient;
+
+  public constructor(client?: ColabCliClient) {
+    this.client = client ?? new ColabCliClient();
+  }
+
+  public async run(options: ExecuteWorkflowOptions): Promise<WorkflowResult> {
+    return executeWorkflow(this.client, options);
+  }
+}
+
