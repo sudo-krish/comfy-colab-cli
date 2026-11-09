@@ -76,7 +76,7 @@ async function ensureSessionActive(
   gpu?: GpuType,
 ): Promise<{ ok: boolean; error?: string }> {
   const sessions = await lifecycle.list();
-  const isActive = sessions.some((s) => s.sessionName === sessionName && s.status === 'active');
+  const isActive = sessions.some(s => s.sessionName === sessionName && s.status === 'active');
   if (isActive) {
     return { ok: true };
   }

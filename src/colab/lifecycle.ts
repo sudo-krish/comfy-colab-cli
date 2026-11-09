@@ -30,7 +30,7 @@ export class ColabLifecycleManager {
   public async start(options: StartEnvironmentOptions = {}): Promise<EnvironmentStatus> {
     const sessionName = options.sessionName || 'comfy-session';
     const sessions = await this.client.listSessions();
-    const existing = sessions.find((s) => s.sessionName === sessionName && s.status === 'active');
+    const existing = sessions.find(s => s.sessionName === sessionName && s.status === 'active');
 
     if (!existing) {
       const createRes = await this.client.createSession({

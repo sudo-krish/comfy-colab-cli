@@ -192,9 +192,7 @@ describe('runCli', () => {
     );
 
     await runCli(['snapshot', 'restore', '123_my_backup.json', '--json']);
-    expect(writeSpy).toHaveBeenCalledWith(
-      expect.stringContaining('"command": "snapshot:restore"'),
-    );
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "snapshot:restore"'));
 
     await runCli(['snapshot', 'unknown']);
     expect(writeSpy).toHaveBeenCalledWith('Usage:\n');

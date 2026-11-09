@@ -505,9 +505,7 @@ function handleSessionsCommand(_args: string[], isJson: boolean): number {
       },
     });
   } else {
-    process.stdout.write(
-      output ? `${output}\n` : '[colab] No active sessions found on server.\n',
-    );
+    process.stdout.write(output ? `${output}\n` : '[colab] No active sessions found on server.\n');
   }
   return 0;
 }
@@ -653,7 +651,7 @@ function printRunResultText(
     process.stdout.write(`[SUCCESS] Generation complete! Job ID: ${result.jobId}\n`);
     if (result.outputs.length > 0) {
       process.stdout.write(
-        `Outputs saved to:\n${result.outputs.map((f) => `  - ${f}`).join('\n')}\n`,
+        `Outputs saved to:\n${result.outputs.map(f => `  - ${f}`).join('\n')}\n`,
       );
     }
     if (result.sessionTerminated) {
@@ -809,7 +807,7 @@ export async function runCli(args: string[] = process.argv.slice(2)): Promise<nu
 }
 
 if (process.env['NODE_ENV'] !== 'test' && !process.env['VITEST']) {
-  void runCli().then((code) => {
+  void runCli().then(code => {
     if (code !== 0) {
       process.exitCode = code;
     }

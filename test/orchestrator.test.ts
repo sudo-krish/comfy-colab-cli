@@ -111,7 +111,7 @@ describe('Workflow Orchestrator', () => {
       stderr: '',
       exitCode: 0,
     });
-    vi.spyOn(client, 'execCode').mockImplementation(async (code) => {
+    vi.spyOn(client, 'execCode').mockImplementation(async code => {
       if (code.includes('127.0.0.1:8188/prompt')) {
         return {
           stdout: JSON.stringify({ ok: true, prompt_id: 'p_auto', job_id: 'j_auto' }),
@@ -120,7 +120,11 @@ describe('Workflow Orchestrator', () => {
         };
       }
       if (code.includes('/tmp/job_')) {
-        return { stdout: JSON.stringify({ state: 'success', outputs: [] }), stderr: '', exitCode: 0 };
+        return {
+          stdout: JSON.stringify({ state: 'success', outputs: [] }),
+          stderr: '',
+          exitCode: 0,
+        };
       }
       return { stdout: 'ok', stderr: '', exitCode: 0 };
     });

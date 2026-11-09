@@ -23,8 +23,9 @@
 - [8. Hybrid Drive-to-NVMe Model Architecture](#8-hybrid-drive-to-nvme-model-architecture)
 - [9. Video Engine (Wan 2.1 & Hunyuan)](#9-video-engine-wan-21--hunyuan)
 - [10. Local Testing & Verification Guide](#10-local-testing--verification-guide)
-- [11. Developer Guide & Quality Gates](#11-developer-guide--quality-gates)
-- [12. License](#12-license)
+- [11. Troubleshooting & Cloud Lifecycle FAQ](#11-troubleshooting--cloud-lifecycle-faq)
+- [12. Developer Guide & Quality Gates](#12-developer-guide--quality-gates)
+- [13. License](#13-license)
 
 ---
 
@@ -383,7 +384,80 @@ If you have an active Google Colab Pro or Google AI Pro subscription, test an en
 
 ---
 
-## 11. Developer Guide & Quality Gates
+## 11. Troubleshooting & Cloud Lifecycle FAQ
+
+### 1. `colab new` or `comfy-colab up` Appears "Stuck" at `Creating session...`
+
+When executing `colab new` or `comfy-colab up`, you may see:
+```text
+[colab] Creating session 'comfy-session'...
+```
+and the command may pause for 45 to 90 seconds.
+
+#### Why This Happens
+1. **Container & Driver Provisioning**: Google Colab actually assigns an ephemeral Google Cloud container, attaches the requested accelerator (`L4`, `A100`, or `T4`), and provisions the GPU kernel. This cold-boot allocation naturally takes **45–90 seconds** on Google's cloud infrastructure.
+2. **Synchronous HTTPS Connection**: The official `google-colab-cli` binary opens an HTTPS connection to `https://colab.research.google.com/tun/m/assign` and blocks synchronously until the VM is ready without printing terminal progress spinners.
+3. **Regional GPU Capacity & Silent Retries**: If Google Cloud experiences peak demand in your assigned region, the backend may return `503 Service Unavailable`. By default, `colab` retries up to 3 times with exponential backoff (10s, 20s, 40s), which can cause it to wait silently for **over 3 to 4 minutes**.
+
+#### How to Resolve It
+
+- **Fail-Fast Mode (Disable Long Silent Retries)**:
+  Set `COLAB_CLI_ASSIGN_RETRIES=0` to force `colab` to report capacity issues within ~60 seconds instead of waiting across multiple retries:
+  ```bash
+  COLAB_CLI_ASSIGN_RETRIES=0 comfy-colab up --gpu L4
+  # or raw:
+  COLAB_CLI_ASSIGN_RETRIES=0 colab new --session comfy-session --gpu L4
+  ```
+
+- **Switch Accelerator Tiers**:
+  If Google Cloud's `L4` pool is momentarily saturated in your region, try provisioning an alternative GPU shape:
+  ```bash
+  # Try T4 (Standard 16 GB GPU)
+  COLAB_CLI_ASSIGN_RETRIES=0 comfy-colab up --gpu T4
+
+  # Or try A100 (High-Memory Compute)
+  COLAB_CLI_ASSIGN_RETRIES=0 comfy-colab up --gpu A100
+  ```
+
+- **Verify Your Credentials via CPU**:
+  To confirm that your Google OAuth, authentication scopes, and CLI binary are fully working, spin up a lightweight CPU session:
+  ```bash
+  COLAB_CLI_ASSIGN_RETRIES=0 colab new --session test-cpu
+  colab sessions
+  colab stop --session test-cpu
+  ```
+  *(CPU sessions typically assign in ~45 seconds).*
+
+---
+
+### 2. Do I Need to Create Sessions Separately with `colab new`?
+
+**No.** `comfy-colab` is an autonomous orchestrator:
+- **`comfy-colab run`**: Automatically inspects `colab sessions`. If an active session already exists, it re-uses it immediately with zero provisioning delay. If no session is running, it automatically provisions the session (`colab new`), mounts your Google Drive, scaffolds ComfyUI paths, and arms the idle watchdog.
+- **`--ephemeral` Flag**: When `--ephemeral` is supplied, `run` completes the generation, downloads outputs to `./outputs/`, shreds remote cloud files, and terminates the Colab GPU VM so compute units are never wasted.
+- **`--dry-run` Flag**: Pass `--dry-run` to any command (`run`, `up`, `stop`) to preview the exact execution plan without creating or modifying cloud resources.
+
+---
+
+### 3. Checking Compute Quota & Runaway Session Protection
+
+- **View Active Balance**:
+  ```bash
+  colab usage
+  ```
+  Displays current compute units balance and active assignments count.
+
+- **In-Kernel Idle Watchdog**:
+  Every VM provisioned by `comfy-colab up` or `comfy-colab run` receives an autonomous background Python watchdog running inside the Colab kernel. If an idle heartbeat expires (default: 20 minutes), the watchdog automatically invokes:
+  ```python
+  from google.colab import runtime
+  runtime.unassign()
+  ```
+  This guarantees your GPU VM terminates even if your local terminal is disconnected, your machine sleeps, or your network drops.
+
+---
+
+## 12. Developer Guide & Quality Gates
 
 This repository enforces an **8-stage shift-left industrial quality pipeline** via `.makelib`:
 
@@ -410,6 +484,6 @@ Enforced via native Git pre-commit hooks:
 
 ---
 
-## 12. License
+## 13. License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.

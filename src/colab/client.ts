@@ -18,24 +18,24 @@ function runWithSpawn(
   input: string,
   timeoutMs?: number,
 ): Promise<CommandExecutionResult> {
-  return new Promise<CommandExecutionResult>((resolve) => {
+  return new Promise<CommandExecutionResult>(resolve => {
     const proc = spawn(binary, args, { timeout: timeoutMs });
     let stdout = '';
     let stderr = '';
-    proc.stdout?.on('data', (c) => {
+    proc.stdout?.on('data', c => {
       stdout += String(c);
     });
-    proc.stderr?.on('data', (c) => {
+    proc.stderr?.on('data', c => {
       stderr += String(c);
     });
-    proc.on('error', (err) => {
+    proc.on('error', err => {
       resolve({
         stdout: stdout.trim(),
         stderr: stderr.trim() || err.message,
         exitCode: 1,
       });
     });
-    proc.on('close', (code) => {
+    proc.on('close', code => {
       resolve({
         stdout: stdout.trim(),
         stderr: stderr.trim(),
