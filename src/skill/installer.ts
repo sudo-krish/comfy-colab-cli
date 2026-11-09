@@ -37,4 +37,3 @@ export function installSkill(targetDir?: string): string {
   fs.writeFileSync(skillFile, generateSkillMarkdown(), 'utf8');
   return skillFile;
 }
-

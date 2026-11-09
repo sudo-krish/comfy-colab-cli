@@ -35,7 +35,9 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write('Commands:\n');
   process.stdout.write('  doctor              Verify environment, GPU quota, and dependencies\n');
   process.stdout.write('  auth                Configure HuggingFace token and CivitAI API key\n');
-  process.stdout.write('  image               Generate image from prompt with optional LoRA chain\n');
+  process.stdout.write(
+    '  image               Generate image from prompt with optional LoRA chain\n',
+  );
   process.stdout.write('  skill install       Generate and install AI agent SKILL.md\n');
   process.stdout.write('  version             Display version\n');
   process.stdout.write('  help                Show this help menu\n\n');
@@ -102,8 +104,12 @@ function showAuthStatus(isJson?: boolean): number {
     });
   } else {
     process.stdout.write(`Vault Status: ${current ? 'Initialized' : 'Not configured'}\n`);
-    process.stdout.write(`HuggingFace Token: ${current?.huggingFaceToken ? 'Configured' : 'Missing'}\n`);
-    process.stdout.write(`CivitAI API Key:   ${current?.civitAiApiKey ? 'Configured' : 'Missing'}\n`);
+    process.stdout.write(
+      `HuggingFace Token: ${current?.huggingFaceToken ? 'Configured' : 'Missing'}\n`,
+    );
+    process.stdout.write(
+      `CivitAI API Key:   ${current?.civitAiApiKey ? 'Configured' : 'Missing'}\n`,
+    );
     process.stdout.write('\nTo set tokens:\n  comfy-colab auth --hf <token> --civitai <key>\n');
   }
   return 0;
@@ -162,7 +168,9 @@ function handleImageCommand(args: string[], isJson: boolean): number {
       },
     });
   } else {
-    process.stdout.write(`[INFO] Image workflow prepared (${Object.keys(workflow).length} nodes, ${loras.length} LoRAs).\n`);
+    process.stdout.write(
+      `[INFO] Image workflow prepared (${Object.keys(workflow).length} nodes, ${loras.length} LoRAs).\n`,
+    );
     process.stdout.write(`Prompt: ${prompt}\n`);
   }
   return 0;

@@ -45,4 +45,3 @@ while True:
         print(f"[WATCHDOG] Warning: watchdog poll check encountered: {e}")
 `.trim();
 }
-

@@ -2,11 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ColabCliClient } from '../colab/client.js';
 import { DEFAULT_OUTPUTS_DIR } from '../config/constants.js';
-import {
-  buildSubmitScript,
-  buildLongPollScript,
-  buildPruneAndFreeScript,
-} from './vm-scripts.js';
+import { buildSubmitScript, buildLongPollScript, buildPruneAndFreeScript } from './vm-scripts.js';
 import type { ComfyApiWorkflow, JobStatusFile, OutputFileInfo } from '../types/workflow.js';
 
 export interface ExecuteWorkflowOptions {
@@ -36,7 +32,7 @@ async function submitJob(
   client: ColabCliClient,
   workflow: ComfyApiWorkflow,
   jobId: string,
-  sessionName?: string
+  sessionName?: string,
 ): Promise<SubmitResult> {
   const submitScript = buildSubmitScript(JSON.stringify(workflow), jobId);
   const submitRes = await client.execCode(submitScript, sessionName);
@@ -50,7 +46,11 @@ async function submitJob(
   }
 
   try {
-    const parsed = JSON.parse(submitRes.stdout) as { ok: boolean; prompt_id?: string; error?: string };
+    const parsed = JSON.parse(submitRes.stdout) as {
+      ok: boolean;
+      prompt_id?: string;
+      error?: string;
+    };
     if (!parsed.ok || !parsed.prompt_id) {
       return {
         ok: false,
@@ -73,7 +73,7 @@ async function pollJobStatus(
   jobId: string,
   maxWaitSeconds: number,
   sessionName?: string,
-  onProgress?: (status: JobStatusFile) => void
+  onProgress?: (status: JobStatusFile) => void,
 ): Promise<JobStatusFile | null> {
   const startTime = Date.now();
   let latestStatus: JobStatusFile | null = null;
@@ -104,7 +104,7 @@ async function downloadJobOutputs(
   client: ColabCliClient,
   outputs: OutputFileInfo[],
   outputsDir: string,
-  sessionName?: string
+  sessionName?: string,
 ): Promise<string[]> {
   const downloadedFiles: string[] = [];
   for (const out of outputs) {
@@ -122,7 +122,7 @@ async function downloadJobOutputs(
 
 export async function executeWorkflow(
   client: ColabCliClient,
-  options: ExecuteWorkflowOptions
+  options: ExecuteWorkflowOptions,
 ): Promise<WorkflowResult> {
   const jobId = `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   const outputsDir = path.resolve(options.outputsDir || DEFAULT_OUTPUTS_DIR);
@@ -142,7 +142,13 @@ export async function executeWorkflow(
 
   const promptId = submitRes.promptId;
   const maxWait = options.maxTotalWaitSeconds || 600;
-  const latestStatus = await pollJobStatus(client, jobId, maxWait, options.sessionName, options.onProgress);
+  const latestStatus = await pollJobStatus(
+    client,
+    jobId,
+    maxWait,
+    options.sessionName,
+    options.onProgress,
+  );
 
   if (!latestStatus || latestStatus.state !== 'success') {
     return {
@@ -155,7 +161,12 @@ export async function executeWorkflow(
     };
   }
 
-  const downloadedFiles = await downloadJobOutputs(client, latestStatus.outputs || [], outputsDir, options.sessionName);
+  const downloadedFiles = await downloadJobOutputs(
+    client,
+    latestStatus.outputs || [],
+    outputsDir,
+    options.sessionName,
+  );
   const pruneScript = buildPruneAndFreeScript(promptId, jobId);
   await client.execCode(pruneScript, options.sessionName);
 

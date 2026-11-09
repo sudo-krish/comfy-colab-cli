@@ -52,4 +52,3 @@ with open(yaml_path, "w") as f:
 print(f"[BOOTSTRAP] Initialized Google Drive store at {STORE} and injected {yaml_path}")
 `.trim();
 }
-

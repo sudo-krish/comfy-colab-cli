@@ -18,4 +18,3 @@ export const COLAB_EXEC_TIMEOUT_SEC = 29.0;
 
 export const DEFAULT_GPU_IMAGE = 'T4';
 export const DEFAULT_GPU_VIDEO = 'L4';
-
