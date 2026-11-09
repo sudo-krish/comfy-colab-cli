@@ -190,4 +190,3 @@ export class ComfyWorkflowRunner {
     return executeWorkflow(this.client, options);
   }
 }
-

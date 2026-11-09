@@ -204,4 +204,3 @@ export function getGoldenTemplate(name: string): ComfyApiWorkflow | null {
   }
   return JSON.parse(JSON.stringify(template)) as ComfyApiWorkflow;
 }
-
