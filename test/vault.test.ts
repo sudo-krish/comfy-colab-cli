@@ -13,8 +13,8 @@ import type { VaultData } from '../src/types/vault.js';
 
 describe('Vault Encryption & Decryption', () => {
   const sampleData: VaultData = {
-    huggingFaceToken: 'hf_test_token_12345',
-    civitAiApiKey: 'civitai_key_abcde',
+    huggingFaceToken: 'dummy-hf-token', // pragma: whitelist secret
+    civitAiApiKey: 'dummy-civit-key', // pragma: whitelist secret
     customKeys: { foo: 'bar' },
     updatedAt: new Date().toISOString(),
   };
@@ -70,19 +70,19 @@ describe('Vault Encryption & Decryption', () => {
       // Update tokens
       const updated = updateTokens(
         {
-          huggingFaceToken: 'hf_updated_new',
-          civitAiApiKey: 'civit_new_key',
+          huggingFaceToken: 'dummy-hf-token-2', // pragma: whitelist secret
+          civitAiApiKey: 'dummy-civit-key-2', // pragma: whitelist secret
           customKeys: { extra: 'val' },
         },
         vaultPath,
         'disk_key',
       );
-      expect(updated.huggingFaceToken).toBe('hf_updated_new');
-      expect(updated.civitAiApiKey).toBe('civit_new_key');
+      expect(updated.huggingFaceToken).toBe('dummy-hf-token-2');
+      expect(updated.civitAiApiKey).toBe('dummy-civit-key-2');
       expect(updated.customKeys?.['extra']).toBe('val');
 
       const reloaded = loadVault(vaultPath, 'disk_key');
-      expect(reloaded?.huggingFaceToken).toBe('hf_updated_new');
+      expect(reloaded?.huggingFaceToken).toBe('dummy-hf-token-2');
 
       // Corrupted file handling
       fs.writeFileSync(vaultPath, 'invalid_json_content');

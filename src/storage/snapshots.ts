@@ -63,4 +63,3 @@ if "${target}" in ("comfy", "all"):
 print(json.dumps({"ok": True, "details": results}))
 `.trim();
 }
-

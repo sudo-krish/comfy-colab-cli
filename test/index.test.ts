@@ -146,6 +146,14 @@ describe('runCli', () => {
     runCli(['models', 'pull', 'https://hf.co/model.safetensors', '--json']);
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "models:pull"'));
 
+    runCli(['models', 'upload', './my_lora.safetensors', '--type', 'loras']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Model upload task ready'),
+    );
+
+    runCli(['models', 'upload', './my_lora.safetensors', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "models:upload"'));
+
     writeSpy.mockRestore();
   });
 

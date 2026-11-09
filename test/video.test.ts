@@ -49,4 +49,3 @@ describe('Video Workflow Builder & Hardware Escalation', () => {
     expect(wf['5']?.inputs['latent_image']).toEqual(['11', 0]);
   });
 });
-

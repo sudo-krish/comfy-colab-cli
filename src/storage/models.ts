@@ -97,4 +97,3 @@ except Exception as e:
     print(f"[REFRESH] Note: Could not notify ComfyUI server at 127.0.0.1:8188: {e}")
 `.trim();
 }
-

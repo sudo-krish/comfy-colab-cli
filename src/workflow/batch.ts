@@ -50,8 +50,8 @@ function parseSingleLine(line: string, index: number): BatchPromptItem {
 export function parseBatchFileContent(content: string): BatchPromptItem[] {
   const lines = content
     .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith('#'));
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !l.startsWith('#'));
 
   return lines.map((line, index) => parseSingleLine(line, index));
 }
