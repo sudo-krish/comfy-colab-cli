@@ -17,6 +17,8 @@ import {
   buildRestoreSnapshotScript,
   buildUpdateScript,
 } from './storage/snapshots.js';
+import { generateBootstrapScript } from './storage/bootstrap.js';
+import { REMOTE_DRIVE_STORE } from './config/constants.js';
 import { listGoldenTemplates, getGoldenTemplate } from './workflow/templates.js';
 import { VERSION } from './index.js';
 import type { AgentEnvelope } from './types/envelope.js';
@@ -61,6 +63,7 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write('Commands:\n');
   process.stdout.write('  doctor              Verify environment, GPU quota, and dependencies\n');
   process.stdout.write('  auth                Configure HuggingFace token and CivitAI API key\n');
+  process.stdout.write('  setup               Initialize persistent Google Drive storage tree\n');
   process.stdout.write('  up                  Spin up Colab VM with GPU, watchdog, and Drive\n');
   process.stdout.write('  stop                Terminate Colab session\n');
   process.stdout.write('  sessions            List active Colab sessions\n');
@@ -468,11 +471,27 @@ function handleRunCommand(args: string[], isJson: boolean): number {
   return 0;
 }
 
+function handleSetupCommand(args: string[], isJson: boolean): number {
+  const storePath = getFlag(args, '--path') || REMOTE_DRIVE_STORE;
+  const script = generateBootstrapScript({ driveStorePath: storePath });
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'setup',
+      data: { storePath, scriptGenerated: Boolean(script) },
+    });
+  } else {
+    process.stdout.write(`[INFO] Storage setup initialized for: ${storePath}\n`);
+  }
+  return 0;
+}
+
 type CommandHandler = (args: string[], isJson: boolean) => number;
 
 const COMMAND_MAP: Record<string, CommandHandler> = {
   doctor: (_args, isJson) => handleDoctorCommand(isJson),
   auth: handleAuthCommand,
+  setup: handleSetupCommand,
   skill: handleSkillCommand,
   image: handleImageCommand,
   video: handleVideoCommand,

@@ -80,6 +80,14 @@ describe('runCli', () => {
     runCli(['auth']);
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('Vault Status:'));
 
+    runCli(['setup']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Storage setup initialized'),
+    );
+
+    runCli(['setup', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "setup"'));
+
     writeSpy.mockRestore();
   });
 
