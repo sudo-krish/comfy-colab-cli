@@ -5,8 +5,17 @@ import { runDoctor, formatDoctorReport } from './doctor/doctor.js';
 import { updateTokens, loadVault } from './config/vault.js';
 import { installSkill } from './skill/installer.js';
 import { buildImageWorkflow, parseLoraFlag } from './workflow/builder.js';
+import { buildVideoWorkflow, validateGpuForVideo } from './workflow/video.js';
+import { applyWorkflowOverrides } from './workflow/overrides.js';
+import { buildListModelsScript, buildPullModelScript } from './storage/models.js';
+import {
+  buildSaveSnapshotScript,
+  buildRestoreSnapshotScript,
+  buildUpdateScript,
+} from './storage/snapshots.js';
 import { VERSION } from './index.js';
 import type { AgentEnvelope } from './types/envelope.js';
+import type { GpuType } from './types/session.js';
 
 function getFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -14,6 +23,18 @@ function getFlag(args: string[], flag: string): string | undefined {
     return args[idx + 1];
   }
   return undefined;
+}
+
+function getAllFlags(args: string[], flag: string): string[] {
+  const values: string[] = [];
+  for (let i = 0; i < args.length - 1; i++) {
+    const item = args[i];
+    const next = args[i + 1];
+    if (item === flag && next) {
+      values.push(next);
+    }
+  }
+  return values;
 }
 
 function hasFlag(args: string[], flag: string): boolean {
@@ -38,6 +59,12 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write(
     '  image               Generate image from prompt with optional LoRA chain\n',
   );
+  process.stdout.write(
+    '  video               Generate video from prompt or reference image (Wan 2.1)\n',
+  );
+  process.stdout.write('  models list|pull    Manage models and checkpoints on Google Drive\n');
+  process.stdout.write('  snapshot save|rest  Save or restore custom node workspace lockfiles\n');
+  process.stdout.write('  update              Upgrade comfy-cli, colab-cli, or ComfyUI core\n');
   process.stdout.write('  skill install       Generate and install AI agent SKILL.md\n');
   process.stdout.write('  version             Display version\n');
   process.stdout.write('  help                Show this help menu\n\n');
@@ -148,13 +175,18 @@ function handleImageCommand(args: string[], isJson: boolean): number {
   const model = getFlag(args, '--model');
   const loraFlag = getFlag(args, '--lora');
   const loras = loraFlag ? parseLoraFlag(loraFlag) : [];
+  const overrides = getAllFlags(args, '--set');
 
-  const workflow = buildImageWorkflow({
+  let workflow = buildImageWorkflow({
     prompt,
     negativePrompt: negative,
     model,
     loras,
   });
+
+  if (overrides.length > 0) {
+    workflow = applyWorkflowOverrides(workflow, overrides);
+  }
 
   if (isJson) {
     printJsonEnvelope({
@@ -172,6 +204,124 @@ function handleImageCommand(args: string[], isJson: boolean): number {
       `[INFO] Image workflow prepared (${Object.keys(workflow).length} nodes, ${loras.length} LoRAs).\n`,
     );
     process.stdout.write(`Prompt: ${prompt}\n`);
+  }
+  return 0;
+}
+
+function handleVideoCommand(args: string[], isJson: boolean): number {
+  const prompt = getFlag(args, '--prompt') || 'cinematic drone flythrough of a neon city, 4k';
+  const initImage = getFlag(args, '--init-image');
+  const model = getFlag(args, '--model');
+  const requestedGpu = (getFlag(args, '--gpu') || 'L4') as GpuType;
+
+  const hwCheck = validateGpuForVideo(requestedGpu);
+  if (!hwCheck.compatible && !isJson) {
+    process.stdout.write(`[WARN] ${hwCheck.warning}\n`);
+  }
+
+  const workflow = buildVideoWorkflow({
+    prompt,
+    initImage,
+    model,
+  });
+
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'video',
+      data: {
+        prompt,
+        isVideo: true,
+        recommendedGpu: requestedGpu,
+        hasInitImage: Boolean(initImage),
+        workflowNodes: Object.keys(workflow).length,
+      },
+    });
+  } else {
+    process.stdout.write(
+      `[INFO] Video workflow prepared (${Object.keys(workflow).length} nodes).\n`,
+    );
+    process.stdout.write(`Prompt: ${prompt}\n`);
+  }
+  return 0;
+}
+
+function handleModelsList(args: string[], isJson: boolean): number {
+  const typeFilter = getFlag(args, '--type');
+  const script = buildListModelsScript(typeFilter);
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'models:list',
+      data: { filter: typeFilter || 'all', hasScript: Boolean(script) },
+    });
+  } else {
+    process.stdout.write(`[INFO] Models inventory ready. Filter: ${typeFilter || 'all'}\n`);
+  }
+  return 0;
+}
+
+function handleModelsPull(args: string[], isJson: boolean): number {
+  const url = args[2] || '';
+  const type = getFlag(args, '--type') || 'checkpoints';
+  const vault = loadVault();
+  const token = vault?.huggingFaceToken;
+  const script = buildPullModelScript(url, type, token);
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'models:pull',
+      data: { url, type, tokenPresent: Boolean(token), hasScript: Boolean(script) },
+    });
+  } else {
+    process.stdout.write(`[INFO] Model pull task ready for '${url}' -> ${type}.\n`);
+  }
+  return 0;
+}
+
+function handleModelsCommand(args: string[], isJson: boolean): number {
+  const sub = args[1] || 'list';
+  if (sub === 'list') {
+    return handleModelsList(args, isJson);
+  }
+  if (sub === 'pull') {
+    return handleModelsPull(args, isJson);
+  }
+  return handleHelpCommand(isJson);
+}
+
+function handleSnapshotCommand(args: string[], isJson: boolean): number {
+  const sub = args[1] || 'save';
+  if (sub === 'save') {
+    const name = args[2] || 'manual';
+    buildSaveSnapshotScript(name);
+    if (isJson) {
+      printJsonEnvelope({ ok: true, command: 'snapshot:save', data: { name } });
+    } else {
+      process.stdout.write(`[INFO] Snapshot save prepared for '${name}'.\n`);
+    }
+    return 0;
+  }
+  if (sub === 'restore') {
+    const filename = args[2] || '';
+    buildRestoreSnapshotScript(filename);
+    if (isJson) {
+      printJsonEnvelope({ ok: true, command: 'snapshot:restore', data: { filename } });
+    } else {
+      process.stdout.write(`[INFO] Snapshot restore prepared for '${filename}'.\n`);
+    }
+    return 0;
+  }
+  return handleHelpCommand(isJson);
+}
+
+function handleUpdateCommand(args: string[], isJson: boolean): number {
+  const target = (getFlag(args, '--target') || 'all') as 'cli' | 'comfy' | 'all';
+  buildUpdateScript(target);
+  if (isJson) {
+    printJsonEnvelope({ ok: true, command: 'update', data: { target } });
+  } else {
+    process.stdout.write(`[INFO] Update initiated for target '${target}'.\n`);
   }
   return 0;
 }
@@ -200,6 +350,29 @@ function handleUnknown(cmd: string, isJson: boolean): number {
   return 0;
 }
 
+function routeCommand(cmd: string, args: string[], isJson: boolean): number {
+  switch (cmd) {
+    case 'doctor':
+      return handleDoctorCommand(isJson);
+    case 'auth':
+      return handleAuthCommand(args, isJson);
+    case 'skill':
+      return handleSkillCommand(args, isJson);
+    case 'image':
+      return handleImageCommand(args, isJson);
+    case 'video':
+      return handleVideoCommand(args, isJson);
+    case 'models':
+      return handleModelsCommand(args, isJson);
+    case 'snapshot':
+      return handleSnapshotCommand(args, isJson);
+    case 'update':
+      return handleUpdateCommand(args, isJson);
+    default:
+      return handleUnknown(cmd, isJson);
+  }
+}
+
 export function runCli(args: string[] = process.argv.slice(2)): number {
   const isJson = hasFlag(args, '--json');
 
@@ -211,18 +384,7 @@ export function runCli(args: string[] = process.argv.slice(2)): number {
   }
 
   const cmd = args[0] || '';
-  switch (cmd) {
-    case 'doctor':
-      return handleDoctorCommand(isJson);
-    case 'auth':
-      return handleAuthCommand(args, isJson);
-    case 'skill':
-      return handleSkillCommand(args, isJson);
-    case 'image':
-      return handleImageCommand(args, isJson);
-    default:
-      return handleUnknown(cmd, isJson);
-  }
+  return routeCommand(cmd, args, isJson);
 }
 
 if (process.env['NODE_ENV'] !== 'test' && !process.env['VITEST']) {

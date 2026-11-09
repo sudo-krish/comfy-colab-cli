@@ -14,7 +14,10 @@ export * from './executor/vm-scripts.js';
 export * from './executor/runner.js';
 export * from './storage/bootstrap.js';
 export * from './storage/models.js';
+export * from './storage/snapshots.js';
 export * from './workflow/builder.js';
+export * from './workflow/video.js';
+export * from './workflow/overrides.js';
 export * from './skill/installer.js';
 
 export class ComfyColabClient {
@@ -28,4 +31,4 @@ export class ComfyColabClient {
   }
 }
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
