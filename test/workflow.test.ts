@@ -58,3 +58,4 @@ describe('Workflow Builder & LoRA Chaining', () => {
     expect(wf['5']?.inputs['model']).toEqual(['11', 0]);
   });
 });
+

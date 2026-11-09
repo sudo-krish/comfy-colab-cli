@@ -168,3 +168,4 @@ if os.path.exists(status_file):
 print(json.dumps({"ok": True, "cloud_wiped": True}))
 `.trim();
 }
+
