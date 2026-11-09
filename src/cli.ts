@@ -7,7 +7,11 @@ import { installSkill } from './skill/installer.js';
 import { buildImageWorkflow, parseLoraFlag } from './workflow/builder.js';
 import { buildVideoWorkflow, validateGpuForVideo } from './workflow/video.js';
 import { applyWorkflowOverrides } from './workflow/overrides.js';
-import { buildListModelsScript, buildPullModelScript } from './storage/models.js';
+import {
+  buildListModelsScript,
+  buildPullModelScript,
+  buildRefreshModelsScript,
+} from './storage/models.js';
 import {
   buildSaveSnapshotScript,
   buildRestoreSnapshotScript,
@@ -56,9 +60,11 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write('Commands:\n');
   process.stdout.write('  doctor              Verify environment, GPU quota, and dependencies\n');
   process.stdout.write('  auth                Configure HuggingFace token and CivitAI API key\n');
-  process.stdout.write(
-    '  image               Generate image from prompt with optional LoRA chain\n',
-  );
+  process.stdout.write('  image               Generate image from prompt with optional LoRA chain\n');
+  process.stdout.write('  video               Generate video from prompt or reference image (Wan 2.1)\n');
+  process.stdout.write('  models list|pull    Manage models and checkpoints on Google Drive\n');
+  process.stdout.write('  snapshot save|rest  Save or restore custom node workspace lockfiles\n');
+  process.stdout.write('  update              Upgrade comfy-cli, colab-cli, or ComfyUI core\n');
   process.stdout.write(
     '  video               Generate video from prompt or reference image (Wan 2.1)\n',
   );
@@ -131,12 +137,8 @@ function showAuthStatus(isJson?: boolean): number {
     });
   } else {
     process.stdout.write(`Vault Status: ${current ? 'Initialized' : 'Not configured'}\n`);
-    process.stdout.write(
-      `HuggingFace Token: ${current?.huggingFaceToken ? 'Configured' : 'Missing'}\n`,
-    );
-    process.stdout.write(
-      `CivitAI API Key:   ${current?.civitAiApiKey ? 'Configured' : 'Missing'}\n`,
-    );
+    process.stdout.write(`HuggingFace Token: ${current?.huggingFaceToken ? 'Configured' : 'Missing'}\n`);
+    process.stdout.write(`CivitAI API Key:   ${current?.civitAiApiKey ? 'Configured' : 'Missing'}\n`);
     process.stdout.write('\nTo set tokens:\n  comfy-colab auth --hf <token> --civitai <key>\n');
   }
   return 0;
@@ -200,9 +202,7 @@ function handleImageCommand(args: string[], isJson: boolean): number {
       },
     });
   } else {
-    process.stdout.write(
-      `[INFO] Image workflow prepared (${Object.keys(workflow).length} nodes, ${loras.length} LoRAs).\n`,
-    );
+    process.stdout.write(`[INFO] Image workflow prepared (${Object.keys(workflow).length} nodes, ${loras.length} LoRAs).\n`);
     process.stdout.write(`Prompt: ${prompt}\n`);
   }
   return 0;
@@ -279,6 +279,22 @@ function handleModelsPull(args: string[], isJson: boolean): number {
   return 0;
 }
 
+function handleModelsUpload(args: string[], isJson: boolean): number {
+  const localPath = args[2] || '';
+  const type = getFlag(args, '--type') || 'loras';
+  const refreshScript = buildRefreshModelsScript();
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'models:upload',
+      data: { localPath, type, refreshScriptAvailable: Boolean(refreshScript) },
+    });
+  } else {
+    process.stdout.write(`[INFO] Model upload task ready for '${localPath}' -> ${type}.\n`);
+  }
+  return 0;
+}
+
 function handleModelsCommand(args: string[], isJson: boolean): number {
   const sub = args[1] || 'list';
   if (sub === 'list') {
@@ -286,6 +302,9 @@ function handleModelsCommand(args: string[], isJson: boolean): number {
   }
   if (sub === 'pull') {
     return handleModelsPull(args, isJson);
+  }
+  if (sub === 'upload') {
+    return handleModelsUpload(args, isJson);
   }
   return handleHelpCommand(isJson);
 }

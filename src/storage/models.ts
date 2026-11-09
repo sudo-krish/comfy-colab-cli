@@ -84,3 +84,17 @@ with urllib.request.urlopen(req) as resp, open(DEST_FILE, "wb") as out_file:
 print(f"[PULL] Download complete: {DEST_FILE}")
 `.trim();
 }
+
+export function buildRefreshModelsScript(): string {
+  return `
+import urllib.request
+
+try:
+    req = urllib.request.Request("http://127.0.0.1:8188/refresh", data=b"", method="POST")
+    urllib.request.urlopen(req, timeout=5)
+    print("[REFRESH] ComfyUI object info and model caches refreshed.")
+except Exception as e:
+    print(f"[REFRESH] Note: Could not notify ComfyUI server at 127.0.0.1:8188: {e}")
+`.trim();
+}
+

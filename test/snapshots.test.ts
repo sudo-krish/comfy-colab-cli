@@ -31,3 +31,4 @@ describe('Snapshots & Self-Updating Scripts', () => {
     expect(scriptAll).toContain('comfy --workspace=/content/ComfyUI update all');
   });
 });
+

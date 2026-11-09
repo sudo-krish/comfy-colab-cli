@@ -18,6 +18,7 @@ export * from './storage/snapshots.js';
 export * from './workflow/builder.js';
 export * from './workflow/video.js';
 export * from './workflow/overrides.js';
+export * from './workflow/batch.js';
 export * from './skill/installer.js';
 
 export class ComfyColabClient {
