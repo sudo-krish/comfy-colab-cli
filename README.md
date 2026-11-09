@@ -22,8 +22,10 @@
 - [7. Hardware Escalation & GPU Matrix](#7-hardware-escalation--gpu-matrix)
 - [8. Hybrid Drive-to-NVMe Model Architecture](#8-hybrid-drive-to-nvme-model-architecture)
 - [9. Video Engine (Wan 2.1 & Hunyuan)](#9-video-engine-wan-21--hunyuan)
-- [10. Developer Guide & Quality Gates](#10-developer-guide--quality-gates)
-- [11. License](#11-license)
+- [10. Local Testing & Verification Guide](#10-local-testing--verification-guide)
+- [11. Troubleshooting & Cloud Lifecycle FAQ](#11-troubleshooting--cloud-lifecycle-faq)
+- [12. Developer Guide & Quality Gates](#12-developer-guide--quality-gates)
+- [13. License](#13-license)
 
 ---
 
@@ -260,7 +262,202 @@ comfy-colab video \
 
 ---
 
-## 10. Developer Guide & Quality Gates
+## 10. Local Testing & Verification Guide
+
+You can test `comfy-colab-cli` locally using three complementary approaches:
+
+### Method 1: Run the Automated Test Suite (Offline & Mocked)
+
+The project includes 78 unit and integration tests covering all modules without needing active GPU credits:
+
+```bash
+# Run Vitest with code coverage report
+make test
+
+# Run the full 8-stage industrial quality gate pipeline
+make check-all
+```
+
+---
+
+### Method 2: Test CLI Commands Locally (Offline)
+
+Ensure the project is built:
+```bash
+make build
+```
+
+Run commands directly via `node ./dist/cli.js <command>` (or run `npm link` in the repository root to use `comfy-colab` globally).
+
+#### 1. Environment Diagnostics & Health Check
+Verifies local Node.js version, `uv`, `google-colab-cli` binary, Colab OAuth state, and compute balance:
+```bash
+# Human-readable report
+node ./dist/cli.js doctor
+
+# Machine-readable JSON envelope
+node ./dist/cli.js doctor --json
+```
+
+#### 2. Encrypted Credential Vault
+Manage HuggingFace and CivitAI API tokens (stored in `~/.config/comfy-colab-cli/vault.enc` via `AES-256-GCM`):
+```bash
+# Inspect current vault status
+node ./dist/cli.js auth
+
+# Configure tokens (stored securely with chmod 600)
+node ./dist/cli.js auth --hf hf_testToken123 --civitai civit_testKey456 --json
+```
+
+#### 3. Golden API Workflow Templates
+Inspect pre-packaged golden ComfyUI API graphs:
+```bash
+# List available templates (flux, sdxl, wan21)
+node ./dist/cli.js template list --json
+
+# View full API workflow schema for Flux.1 Dev
+node ./dist/cli.js template show flux --json
+```
+
+#### 4. Image Workflow Builder & Multi-LoRA Chaining
+Test parameter patching, multi-LoRA daisy chaining, and dot-notation overrides:
+```bash
+# Chaining two LoRAs with custom weights and step override
+node ./dist/cli.js image \
+  --prompt "cyberpunk warrior in rain" \
+  --lora "anime_style.safetensors:0.8,detailer.safetensors:0.5" \
+  --set "5.inputs.steps=30" \
+  --json
+```
+
+#### 5. Video Hardware Escalation Check
+Verify that the CLI catches low-VRAM GPUs and warns against OOM crashes:
+```bash
+# Test with T4 (triggers VRAM escalation warning)
+node ./dist/cli.js video --prompt "drone shot over neon city" --gpu T4
+
+# Test with L4 (recommended 24 GB VRAM)
+node ./dist/cli.js video --prompt "drone shot over neon city" --gpu L4 --json
+```
+
+#### 6. Model & Storage Management
+Preview remote Google Drive inventory and direct cloud-pull scripts:
+```bash
+# List checkpoints
+node ./dist/cli.js models list --type checkpoints --json
+
+# Test cloud-to-drive direct download task
+node ./dist/cli.js models pull https://huggingface.co/model.safetensors --type checkpoints --json
+```
+
+#### 7. AI Agent Skill Installation
+Install the upgraded `SKILL.md` into your local agent workspace:
+```bash
+node ./dist/cli.js skill install
+```
+
+---
+
+### Method 3: Testing Live Execution on Google Colab (Requires Colab Pro)
+
+If you have an active Google Colab Pro or Google AI Pro subscription, test an end-to-end cloud generation session:
+
+1. **One-Time Google OAuth**:
+   ```bash
+   colab auth
+   ```
+2. **Verify Compute Units**:
+   ```bash
+   colab usage
+   ```
+3. **Execute an Ephemeral End-to-End Run**:
+   ```bash
+   node ./dist/cli.js run \
+     --template flux \
+     --prompt "a majestic cybernetic lion in neon savanna, 8k" \
+     --hot-cache flux1-dev.safetensors \
+     --output ./outputs \
+     --ephemeral \
+     --json
+   ```
+   *(Starts Colab session, mounts Drive, hot-caches model to NVMe, renders generation, downloads verified output to `./outputs/`, shreds remote files, and auto-terminates the VM).*
+
+---
+
+## 11. Troubleshooting & Cloud Lifecycle FAQ
+
+### 1. `colab new` or `comfy-colab up` Appears "Stuck" at `Creating session...`
+
+When executing `colab new` or `comfy-colab up`, you may see:
+```text
+[colab] Creating session 'comfy-session'...
+```
+and the command may pause for 45 to 90 seconds.
+
+#### Why This Happens
+1. **Container & Driver Provisioning**: Google Colab actually assigns an ephemeral Google Cloud container, attaches the requested accelerator (`L4`, `A100`, or `T4`), and provisions the GPU kernel. This cold-boot allocation naturally takes **45–90 seconds** on Google's cloud infrastructure.
+2. **Synchronous HTTPS Connection**: The official `google-colab-cli` binary opens an HTTPS connection to `https://colab.research.google.com/tun/m/assign` and blocks synchronously until the VM is ready without printing terminal progress spinners.
+3. **Regional GPU Capacity & Silent Retries**: If Google Cloud experiences peak demand in your assigned region, the backend may return `503 Service Unavailable`. By default, `colab` retries up to 3 times with exponential backoff (10s, 20s, 40s), which can cause it to wait silently for **over 3 to 4 minutes**.
+
+#### How to Resolve It
+
+- **Fail-Fast Mode (Disable Long Silent Retries)**:
+  Set `COLAB_CLI_ASSIGN_RETRIES=0` to force `colab` to report capacity issues within ~60 seconds instead of waiting across multiple retries:
+  ```bash
+  COLAB_CLI_ASSIGN_RETRIES=0 comfy-colab up --gpu L4
+  # or raw:
+  COLAB_CLI_ASSIGN_RETRIES=0 colab new --session comfy-session --gpu L4
+  ```
+
+- **Switch Accelerator Tiers**:
+  If Google Cloud's `L4` pool is momentarily saturated in your region, try provisioning an alternative GPU shape:
+  ```bash
+  # Try T4 (Standard 16 GB GPU)
+  COLAB_CLI_ASSIGN_RETRIES=0 comfy-colab up --gpu T4
+
+  # Or try A100 (High-Memory Compute)
+  COLAB_CLI_ASSIGN_RETRIES=0 comfy-colab up --gpu A100
+  ```
+
+- **Verify Your Credentials via CPU**:
+  To confirm that your Google OAuth, authentication scopes, and CLI binary are fully working, spin up a lightweight CPU session:
+  ```bash
+  COLAB_CLI_ASSIGN_RETRIES=0 colab new --session test-cpu
+  colab sessions
+  colab stop --session test-cpu
+  ```
+  *(CPU sessions typically assign in ~45 seconds).*
+
+---
+
+### 2. Do I Need to Create Sessions Separately with `colab new`?
+
+**No.** `comfy-colab` is an autonomous orchestrator:
+- **`comfy-colab run`**: Automatically inspects `colab sessions`. If an active session already exists, it re-uses it immediately with zero provisioning delay. If no session is running, it automatically provisions the session (`colab new`), mounts your Google Drive, scaffolds ComfyUI paths, and arms the idle watchdog.
+- **`--ephemeral` Flag**: When `--ephemeral` is supplied, `run` completes the generation, downloads outputs to `./outputs/`, shreds remote cloud files, and terminates the Colab GPU VM so compute units are never wasted.
+- **`--dry-run` Flag**: Pass `--dry-run` to any command (`run`, `up`, `stop`) to preview the exact execution plan without creating or modifying cloud resources.
+
+---
+
+### 3. Checking Compute Quota & Runaway Session Protection
+
+- **View Active Balance**:
+  ```bash
+  colab usage
+  ```
+  Displays current compute units balance and active assignments count.
+
+- **In-Kernel Idle Watchdog**:
+  Every VM provisioned by `comfy-colab up` or `comfy-colab run` receives an autonomous background Python watchdog running inside the Colab kernel. If an idle heartbeat expires (default: 20 minutes), the watchdog automatically invokes:
+  ```python
+  from google.colab import runtime
+  runtime.unassign()
+  ```
+  This guarantees your GPU VM terminates even if your local terminal is disconnected, your machine sleeps, or your network drops.
+
+---
+
+## 12. Developer Guide & Quality Gates
 
 This repository enforces an **8-stage shift-left industrial quality pipeline** via `.makelib`:
 
@@ -287,6 +484,6 @@ Enforced via native Git pre-commit hooks:
 
 ---
 
-## 11. License
+## 13. License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.

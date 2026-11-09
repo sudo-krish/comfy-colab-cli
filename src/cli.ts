@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 import { runDoctor, formatDoctorReport } from './doctor/doctor.js';
 import { updateTokens, loadVault } from './config/vault.js';
 import { installSkill } from './skill/installer.js';
@@ -20,6 +21,8 @@ import {
 import { generateBootstrapScript } from './storage/bootstrap.js';
 import { REMOTE_DRIVE_STORE } from './config/constants.js';
 import { listGoldenTemplates, getGoldenTemplate } from './workflow/templates.js';
+import { ColabLifecycleManager } from './colab/lifecycle.js';
+import { runOrchestration } from './executor/orchestrator.js';
 import { VERSION } from './index.js';
 import type { AgentEnvelope } from './types/envelope.js';
 import type { GpuType } from './types/session.js';
@@ -67,6 +70,9 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write('  up                  Spin up Colab VM with GPU, watchdog, and Drive\n');
   process.stdout.write('  stop                Terminate Colab session\n');
   process.stdout.write('  sessions            List active Colab sessions\n');
+  process.stdout.write(
+    '  url                 Print browser URL connecting to active Colab session\n',
+  );
   process.stdout.write(
     '  image               Generate image from prompt with optional LoRA chain\n',
   );
@@ -356,52 +362,185 @@ function handleUpdateCommand(args: string[], isJson: boolean): number {
   return 0;
 }
 
-function handleUpCommand(args: string[], isJson: boolean): number {
-  const gpu = (getFlag(args, '--gpu') || 'L4') as GpuType;
-  const session = getFlag(args, '--session') || 'comfy-session';
-  const ttl = Number(getFlag(args, '--ttl') || '20');
-  const mountDrive = hasFlag(args, '--mount-drive');
-  const bootstrap = hasFlag(args, '--bootstrap');
+interface UpOptions {
+  session: string;
+  gpu: GpuType;
+  ttl: number;
+  mountDrive: boolean;
+  bootstrap: boolean;
+  dryRun: boolean;
+}
 
+function parseUpOptions(args: string[]): UpOptions {
+  return {
+    gpu: (getFlag(args, '--gpu') || 'L4') as GpuType,
+    session: getFlag(args, '--session') || 'comfy-session',
+    ttl: Number(getFlag(args, '--ttl') || '20'),
+    mountDrive: !hasFlag(args, '--no-mount-drive'),
+    bootstrap: !hasFlag(args, '--no-bootstrap'),
+    dryRun: hasFlag(args, '--dry-run'),
+  };
+}
+
+function printUpDryRun(opts: UpOptions, isJson: boolean): void {
   if (isJson) {
     printJsonEnvelope({
       ok: true,
       command: 'up',
-      data: { session, gpu, ttlMinutes: ttl, mountDrive, bootstrap },
+      data: { ...opts },
     });
-  } else {
-    process.stdout.write(
-      `[INFO] Starting Colab environment '${session}' (GPU: ${gpu}, TTL: ${ttl}m, Mount Drive: ${mountDrive}).\n`,
-    );
+    return;
   }
-  return 0;
+  process.stdout.write(
+    `[DRY-RUN] Starting Colab environment '${opts.session}' (GPU: ${opts.gpu}, TTL: ${opts.ttl}m, Mount Drive: ${opts.mountDrive}).\n`,
+  );
 }
 
-function handleStopCommand(args: string[], isJson: boolean): number {
-  const session = getFlag(args, '--session') || getFlag(args, '-s') || 'all';
+function printUpResult(
+  result: { ok: boolean; details?: string },
+  opts: UpOptions,
+  isJson: boolean,
+): void {
+  if (isJson) {
+    printJsonEnvelope({
+      ok: result.ok,
+      command: 'up',
+      data: result.ok ? { ...opts } : undefined,
+      error: result.ok
+        ? undefined
+        : { code: 'ERR_SESSION_START', message: result.details || 'Failed to start session' },
+    });
+    return;
+  }
+  if (result.ok) {
+    process.stdout.write(
+      `[SUCCESS] Colab environment '${opts.session}' active (GPU: ${opts.gpu}, TTL: ${opts.ttl}m).\n`,
+    );
+    return;
+  }
+  process.stderr.write(
+    `[ERROR] Failed to start Colab environment: ${result.details || 'Unknown error'}\n`,
+  );
+}
+
+async function handleUpCommand(args: string[], isJson: boolean): Promise<number> {
+  const opts = parseUpOptions(args);
+  if (opts.dryRun) {
+    printUpDryRun(opts, isJson);
+    return 0;
+  }
+
+  const lifecycle = new ColabLifecycleManager();
+  const result = await lifecycle.start({
+    sessionName: opts.session,
+    gpu: opts.gpu,
+    ttlMinutes: opts.ttl,
+    mountDrive: opts.mountDrive,
+    bootstrapStorage: opts.bootstrap,
+  });
+
+  printUpResult(result, opts, isJson);
+  return result.ok ? 0 : 1;
+}
+
+function printStopDryRun(session: string, isJson: boolean): void {
   if (isJson) {
     printJsonEnvelope({
       ok: true,
       command: 'stop',
-      data: { session },
+      data: { session, dryRun: true },
+    });
+    return;
+  }
+  process.stdout.write(`[DRY-RUN] Stop signal sent for session '${session}'.\n`);
+}
+
+function printStopResult(
+  result: { ok: boolean; message: string },
+  session: string,
+  isJson: boolean,
+): void {
+  if (isJson) {
+    printJsonEnvelope({
+      ok: result.ok,
+      command: 'stop',
+      data: result.ok ? { session, message: result.message } : undefined,
+      error: result.ok ? undefined : { code: 'ERR_SESSION_STOP', message: result.message },
+    });
+    return;
+  }
+  if (result.ok) {
+    process.stdout.write(`[SUCCESS] Colab session '${session}' stopped.\n`);
+    return;
+  }
+  process.stderr.write(`[ERROR] Failed to stop session '${session}': ${result.message}\n`);
+}
+
+async function handleStopCommand(args: string[], isJson: boolean): Promise<number> {
+  const session = getFlag(args, '--session') || getFlag(args, '-s') || 'comfy-session';
+  const isDryRun = hasFlag(args, '--dry-run');
+
+  if (isDryRun) {
+    printStopDryRun(session, isJson);
+    return 0;
+  }
+
+  const lifecycle = new ColabLifecycleManager();
+  const result = await lifecycle.stop(session === 'all' ? undefined : session);
+  printStopResult(result, session, isJson);
+  return result.ok ? 0 : 1;
+}
+
+function handleSessionsCommand(_args: string[], isJson: boolean): number {
+  const res = spawnSync('colab', ['sessions'], { encoding: 'utf8' });
+  const output = (res.stdout || res.stderr || res.error?.message || '').trim();
+  if (isJson) {
+    const active = output.length > 0 && !output.includes('No active sessions');
+    printJsonEnvelope({
+      ok: true,
+      command: 'sessions',
+      data: {
+        output: output || 'No active sessions found.',
+        active,
+      },
     });
   } else {
-    process.stdout.write(`[INFO] Stop signal sent for session '${session}'.\n`);
+    process.stdout.write(output ? `${output}\n` : '[colab] No active sessions found on server.\n');
   }
   return 0;
 }
 
-function handleSessionsCommand(_args: string[], isJson: boolean): number {
+function buildUrlArgs(args: string[]): string[] {
+  const session = getFlag(args, '--session') || getFlag(args, '-s');
+  const cmdArgs = ['url'];
+  if (session) {
+    cmdArgs.push('--session', session);
+  }
+  if (hasFlag(args, '--open')) {
+    cmdArgs.push('--open');
+  }
+  return cmdArgs;
+}
+
+function printUrlOutput(output: string, isOk: boolean, isJson: boolean): void {
   if (isJson) {
     printJsonEnvelope({
-      ok: true,
-      command: 'sessions',
-      data: { sessions: [] },
+      ok: isOk,
+      command: 'url',
+      data: { url: output },
     });
-  } else {
-    process.stdout.write('[INFO] Colab sessions queried.\n');
+    return;
   }
-  return 0;
+  process.stdout.write(output ? `${output}\n` : '[colab] No active sessions found.\n');
+}
+
+function handleUrlCommand(args: string[], isJson: boolean): number {
+  const cmdArgs = buildUrlArgs(args);
+  const res = spawnSync('colab', cmdArgs, { encoding: 'utf8' });
+  const output = (res.stdout || res.stderr || res.error?.message || '').trim();
+  const isOk = res.status === 0;
+  printUrlOutput(output, isOk, isJson);
+  return isOk ? 0 : 1;
 }
 
 function handleTemplateCommand(args: string[], isJson: boolean): number {
@@ -438,37 +577,152 @@ function handleTemplateCommand(args: string[], isJson: boolean): number {
   return 0;
 }
 
-function handleRunCommand(args: string[], isJson: boolean): number {
-  const prompt = getFlag(args, '--prompt') || 'a majestic cinematic landscape, photorealistic, 8k';
-  const templateName = getFlag(args, '--template');
-  const workflowFile = getFlag(args, '--workflow') || getFlag(args, '-w');
-  const loraFlag = getFlag(args, '--lora');
-  const overrides = getAllFlags(args, '--set');
-  const outputDir = getFlag(args, '--output') || './outputs';
-  const ephemeral = hasFlag(args, '--ephemeral');
-  const hotCache = getFlag(args, '--hot-cache');
+interface RunOptions {
+  prompt: string;
+  negative?: string;
+  templateName?: string;
+  workflowFile?: string;
+  model?: string;
+  loraFlag?: string;
+  overrides: string[];
+  outputDir: string;
+  session: string;
+  gpu: GpuType;
+  ephemeral: boolean;
+  hotCache?: string;
+  dryRun: boolean;
+}
 
+function parseRunOptions(args: string[]): RunOptions {
+  return {
+    prompt: getFlag(args, '--prompt') || 'a majestic cinematic landscape, photorealistic, 8k',
+    negative: getFlag(args, '--negative'),
+    templateName: getFlag(args, '--template'),
+    workflowFile: getFlag(args, '--workflow') || getFlag(args, '-w'),
+    model: getFlag(args, '--model'),
+    loraFlag: getFlag(args, '--lora'),
+    overrides: getAllFlags(args, '--set'),
+    outputDir: getFlag(args, '--output') || './outputs',
+    session: getFlag(args, '--session') || 'comfy-session',
+    gpu: (getFlag(args, '--gpu') || 'L4') as GpuType,
+    ephemeral: hasFlag(args, '--ephemeral'),
+    hotCache: getFlag(args, '--hot-cache'),
+    dryRun: hasFlag(args, '--dry-run'),
+  };
+}
+
+function printRunDryRun(opts: RunOptions, isJson: boolean): void {
   if (isJson) {
     printJsonEnvelope({
       ok: true,
       command: 'run',
       data: {
-        prompt,
-        template: templateName || 'custom',
-        hasWorkflowFile: Boolean(workflowFile),
-        lora: loraFlag,
-        overridesCount: overrides.length,
-        outputDir,
-        ephemeral,
-        hotCache,
+        prompt: opts.prompt,
+        template: opts.templateName || 'custom',
+        hasWorkflowFile: Boolean(opts.workflowFile),
+        lora: opts.loraFlag,
+        overridesCount: opts.overrides.length,
+        outputDir: opts.outputDir,
+        ephemeral: opts.ephemeral,
+        hotCache: opts.hotCache,
+        dryRun: true,
       },
     });
-  } else {
-    process.stdout.write(`[INFO] Run orchestration initiated for '${templateName || 'custom'}'.\n`);
-    process.stdout.write(`Prompt: ${prompt}\n`);
-    process.stdout.write(`Output directory: ${outputDir} (ephemeral: ${ephemeral})\n`);
+    return;
   }
-  return 0;
+  process.stdout.write(
+    `[DRY-RUN] Run orchestration planned for '${opts.templateName || 'custom'}'.\n`,
+  );
+  process.stdout.write(`Prompt: ${opts.prompt}\n`);
+  process.stdout.write(`Output directory: ${opts.outputDir} (ephemeral: ${opts.ephemeral})\n`);
+}
+
+function printRunResultText(
+  result: {
+    ok: boolean;
+    jobId: string;
+    outputs: string[];
+    sessionTerminated: boolean;
+    error?: string;
+  },
+  session: string,
+): void {
+  if (result.ok) {
+    process.stdout.write(`[SUCCESS] Generation complete! Job ID: ${result.jobId}\n`);
+    if (result.outputs.length > 0) {
+      process.stdout.write(
+        `Outputs saved to:\n${result.outputs.map(f => `  - ${f}`).join('\n')}\n`,
+      );
+    }
+    if (result.sessionTerminated) {
+      process.stdout.write(`[INFO] Ephemeral session '${session}' auto-terminated.\n`);
+    }
+    return;
+  }
+  process.stderr.write(`[ERROR] Orchestration failed: ${result.error || 'Unknown error'}\n`);
+}
+
+function printRunResult(
+  result: {
+    ok: boolean;
+    jobId: string;
+    outputs: string[];
+    sessionTerminated: boolean;
+    error?: string;
+  },
+  session: string,
+  isJson: boolean,
+): void {
+  if (isJson) {
+    printJsonEnvelope({
+      ok: result.ok,
+      command: 'run',
+      data: result.ok
+        ? {
+            jobId: result.jobId,
+            outputs: result.outputs,
+            sessionTerminated: result.sessionTerminated,
+          }
+        : undefined,
+      error: result.ok
+        ? undefined
+        : { code: 'ERR_RUN_FAILED', message: result.error || 'Execution failed' },
+    });
+    return;
+  }
+  printRunResultText(result, session);
+}
+
+async function handleRunCommand(args: string[], isJson: boolean): Promise<number> {
+  const opts = parseRunOptions(args);
+  if (opts.dryRun) {
+    printRunDryRun(opts, isJson);
+    return 0;
+  }
+
+  if (!isJson) {
+    process.stdout.write(
+      `[INFO] Orchestrating ComfyUI generation (Session: ${opts.session}, GPU: ${opts.gpu})...\n`,
+    );
+  }
+
+  const result = await runOrchestration({
+    prompt: opts.prompt,
+    negativePrompt: opts.negative,
+    templateName: opts.templateName,
+    workflowFile: opts.workflowFile,
+    model: opts.model,
+    loraFlag: opts.loraFlag,
+    overrides: opts.overrides,
+    outputDir: opts.outputDir,
+    sessionName: opts.session,
+    gpu: opts.gpu,
+    ephemeral: opts.ephemeral,
+    hotCache: opts.hotCache,
+  });
+
+  printRunResult(result, opts.session, isJson);
+  return result.ok ? 0 : 1;
 }
 
 function handleSetupCommand(args: string[], isJson: boolean): number {
@@ -486,7 +740,7 @@ function handleSetupCommand(args: string[], isJson: boolean): number {
   return 0;
 }
 
-type CommandHandler = (args: string[], isJson: boolean) => number;
+type CommandHandler = (args: string[], isJson: boolean) => number | Promise<number>;
 
 const COMMAND_MAP: Record<string, CommandHandler> = {
   doctor: (_args, isJson) => handleDoctorCommand(isJson),
@@ -501,6 +755,7 @@ const COMMAND_MAP: Record<string, CommandHandler> = {
   up: handleUpCommand,
   stop: handleStopCommand,
   sessions: handleSessionsCommand,
+  url: handleUrlCommand,
   template: handleTemplateCommand,
   run: handleRunCommand,
 };
@@ -529,7 +784,7 @@ function handleUnknown(cmd: string, isJson: boolean): number {
   return 0;
 }
 
-function routeCommand(cmd: string, args: string[], isJson: boolean): number {
+async function routeCommand(cmd: string, args: string[], isJson: boolean): Promise<number> {
   if (Object.prototype.hasOwnProperty.call(COMMAND_MAP, cmd)) {
     const handler = COMMAND_MAP[cmd]!;
     return handler(args, isJson);
@@ -537,7 +792,7 @@ function routeCommand(cmd: string, args: string[], isJson: boolean): number {
   return handleUnknown(cmd, isJson);
 }
 
-export function runCli(args: string[] = process.argv.slice(2)): number {
+export async function runCli(args: string[] = process.argv.slice(2)): Promise<number> {
   const isJson = hasFlag(args, '--json');
 
   if (isHelpRequested(args)) {
@@ -552,5 +807,9 @@ export function runCli(args: string[] = process.argv.slice(2)): number {
 }
 
 if (process.env['NODE_ENV'] !== 'test' && !process.env['VITEST']) {
-  runCli();
+  void runCli().then(code => {
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
 }
