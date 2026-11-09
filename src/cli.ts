@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 import { runDoctor, formatDoctorReport } from './doctor/doctor.js';
 import { updateTokens, loadVault } from './config/vault.js';
 import { installSkill } from './skill/installer.js';
@@ -67,6 +68,9 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write('  up                  Spin up Colab VM with GPU, watchdog, and Drive\n');
   process.stdout.write('  stop                Terminate Colab session\n');
   process.stdout.write('  sessions            List active Colab sessions\n');
+  process.stdout.write(
+    '  url                 Print browser URL connecting to active Colab session\n',
+  );
   process.stdout.write(
     '  image               Generate image from prompt with optional LoRA chain\n',
   );
@@ -392,16 +396,57 @@ function handleStopCommand(args: string[], isJson: boolean): number {
 }
 
 function handleSessionsCommand(_args: string[], isJson: boolean): number {
+  const res = spawnSync('colab', ['sessions'], { encoding: 'utf8' });
+  const output = (res.stdout || res.stderr || res.error?.message || '').trim();
   if (isJson) {
+    const active = output.length > 0 && !output.includes('No active sessions');
     printJsonEnvelope({
       ok: true,
       command: 'sessions',
-      data: { sessions: [] },
+      data: {
+        output: output || 'No active sessions found.',
+        active,
+      },
     });
   } else {
-    process.stdout.write('[INFO] Colab sessions queried.\n');
+    process.stdout.write(
+      output ? `${output}\n` : '[colab] No active sessions found on server.\n',
+    );
   }
   return 0;
+}
+
+function buildUrlArgs(args: string[]): string[] {
+  const session = getFlag(args, '--session') || getFlag(args, '-s');
+  const cmdArgs = ['url'];
+  if (session) {
+    cmdArgs.push('--session', session);
+  }
+  if (hasFlag(args, '--open')) {
+    cmdArgs.push('--open');
+  }
+  return cmdArgs;
+}
+
+function printUrlOutput(output: string, isOk: boolean, isJson: boolean): void {
+  if (isJson) {
+    printJsonEnvelope({
+      ok: isOk,
+      command: 'url',
+      data: { url: output },
+    });
+    return;
+  }
+  process.stdout.write(output ? `${output}\n` : '[colab] No active sessions found.\n');
+}
+
+function handleUrlCommand(args: string[], isJson: boolean): number {
+  const cmdArgs = buildUrlArgs(args);
+  const res = spawnSync('colab', cmdArgs, { encoding: 'utf8' });
+  const output = (res.stdout || res.stderr || res.error?.message || '').trim();
+  const isOk = res.status === 0;
+  printUrlOutput(output, isOk, isJson);
+  return isOk ? 0 : 1;
 }
 
 function handleTemplateCommand(args: string[], isJson: boolean): number {
@@ -501,6 +546,7 @@ const COMMAND_MAP: Record<string, CommandHandler> = {
   up: handleUpCommand,
   stop: handleStopCommand,
   sessions: handleSessionsCommand,
+  url: handleUrlCommand,
   template: handleTemplateCommand,
   run: handleRunCommand,
 };

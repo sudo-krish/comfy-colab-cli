@@ -215,10 +215,19 @@ describe('runCli', () => {
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "stop"'));
 
     runCli(['sessions']);
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] Colab sessions queried'));
+    expect(writeSpy).toHaveBeenCalled();
 
     runCli(['sessions', '--json']);
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "sessions"'));
+
+    runCli(['url']);
+    expect(writeSpy).toHaveBeenCalled();
+
+    runCli(['url', '-s', 'test-sess', '--open']);
+    expect(writeSpy).toHaveBeenCalled();
+
+    runCli(['url', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "url"'));
 
     writeSpy.mockRestore();
   });
