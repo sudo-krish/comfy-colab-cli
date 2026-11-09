@@ -1,6 +1,6 @@
 {
   "name": "comfy-colab-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Headless CLI and AI agent skill to spin up ComfyUI on Google Colab, execute API workflows, and auto-terminate GPU sessions",
   "type": "module",
   "main": "./dist/index.cjs",
