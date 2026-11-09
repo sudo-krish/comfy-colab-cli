@@ -22,8 +22,9 @@
 - [7. Hardware Escalation & GPU Matrix](#7-hardware-escalation--gpu-matrix)
 - [8. Hybrid Drive-to-NVMe Model Architecture](#8-hybrid-drive-to-nvme-model-architecture)
 - [9. Video Engine (Wan 2.1 & Hunyuan)](#9-video-engine-wan-21--hunyuan)
-- [10. Developer Guide & Quality Gates](#10-developer-guide--quality-gates)
-- [11. License](#11-license)
+- [10. Local Testing & Verification Guide](#10-local-testing--verification-guide)
+- [11. Developer Guide & Quality Gates](#11-developer-guide--quality-gates)
+- [12. License](#12-license)
 
 ---
 
@@ -260,7 +261,129 @@ comfy-colab video \
 
 ---
 
-## 10. Developer Guide & Quality Gates
+## 10. Local Testing & Verification Guide
+
+You can test `comfy-colab-cli` locally using three complementary approaches:
+
+### Method 1: Run the Automated Test Suite (Offline & Mocked)
+
+The project includes 78 unit and integration tests covering all modules without needing active GPU credits:
+
+```bash
+# Run Vitest with code coverage report
+make test
+
+# Run the full 8-stage industrial quality gate pipeline
+make check-all
+```
+
+---
+
+### Method 2: Test CLI Commands Locally (Offline)
+
+Ensure the project is built:
+```bash
+make build
+```
+
+Run commands directly via `node ./dist/cli.js <command>` (or run `npm link` in the repository root to use `comfy-colab` globally).
+
+#### 1. Environment Diagnostics & Health Check
+Verifies local Node.js version, `uv`, `google-colab-cli` binary, Colab OAuth state, and compute balance:
+```bash
+# Human-readable report
+node ./dist/cli.js doctor
+
+# Machine-readable JSON envelope
+node ./dist/cli.js doctor --json
+```
+
+#### 2. Encrypted Credential Vault
+Manage HuggingFace and CivitAI API tokens (stored in `~/.config/comfy-colab-cli/vault.enc` via `AES-256-GCM`):
+```bash
+# Inspect current vault status
+node ./dist/cli.js auth
+
+# Configure tokens (stored securely with chmod 600)
+node ./dist/cli.js auth --hf hf_testToken123 --civitai civit_testKey456 --json
+```
+
+#### 3. Golden API Workflow Templates
+Inspect pre-packaged golden ComfyUI API graphs:
+```bash
+# List available templates (flux, sdxl, wan21)
+node ./dist/cli.js template list --json
+
+# View full API workflow schema for Flux.1 Dev
+node ./dist/cli.js template show flux --json
+```
+
+#### 4. Image Workflow Builder & Multi-LoRA Chaining
+Test parameter patching, multi-LoRA daisy chaining, and dot-notation overrides:
+```bash
+# Chaining two LoRAs with custom weights and step override
+node ./dist/cli.js image \
+  --prompt "cyberpunk warrior in rain" \
+  --lora "anime_style.safetensors:0.8,detailer.safetensors:0.5" \
+  --set "5.inputs.steps=30" \
+  --json
+```
+
+#### 5. Video Hardware Escalation Check
+Verify that the CLI catches low-VRAM GPUs and warns against OOM crashes:
+```bash
+# Test with T4 (triggers VRAM escalation warning)
+node ./dist/cli.js video --prompt "drone shot over neon city" --gpu T4
+
+# Test with L4 (recommended 24 GB VRAM)
+node ./dist/cli.js video --prompt "drone shot over neon city" --gpu L4 --json
+```
+
+#### 6. Model & Storage Management
+Preview remote Google Drive inventory and direct cloud-pull scripts:
+```bash
+# List checkpoints
+node ./dist/cli.js models list --type checkpoints --json
+
+# Test cloud-to-drive direct download task
+node ./dist/cli.js models pull https://huggingface.co/model.safetensors --type checkpoints --json
+```
+
+#### 7. AI Agent Skill Installation
+Install the upgraded `SKILL.md` into your local agent workspace:
+```bash
+node ./dist/cli.js skill install
+```
+
+---
+
+### Method 3: Testing Live Execution on Google Colab (Requires Colab Pro)
+
+If you have an active Google Colab Pro or Google AI Pro subscription, test an end-to-end cloud generation session:
+
+1. **One-Time Google OAuth**:
+   ```bash
+   colab auth
+   ```
+2. **Verify Compute Units**:
+   ```bash
+   colab usage
+   ```
+3. **Execute an Ephemeral End-to-End Run**:
+   ```bash
+   node ./dist/cli.js run \
+     --template flux \
+     --prompt "a majestic cybernetic lion in neon savanna, 8k" \
+     --hot-cache flux1-dev.safetensors \
+     --output ./outputs \
+     --ephemeral \
+     --json
+   ```
+   *(Starts Colab session, mounts Drive, hot-caches model to NVMe, renders generation, downloads verified output to `./outputs/`, shreds remote files, and auto-terminates the VM).*
+
+---
+
+## 11. Developer Guide & Quality Gates
 
 This repository enforces an **8-stage shift-left industrial quality pipeline** via `.makelib`:
 
@@ -287,6 +410,6 @@ Enforced via native Git pre-commit hooks:
 
 ---
 
-## 11. License
+## 12. License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
