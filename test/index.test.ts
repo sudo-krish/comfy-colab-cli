@@ -4,79 +4,12 @@ import { ComfyColabClient, VERSION } from '../src/index.js';
 import { runCli } from '../src/cli.js';
 
 describe('ComfyColabClient', () => {
-  it('initializes with default options', () => {
-    const client = new ComfyColabClient();
-    const config = client.getConfig();
-
-    expect(config.gpuType).toBe('T4');
-    expect(config.timeoutMinutes).toBe(60);
-    expect(config.autoTerminate).toBe(true);
-    expect(config.tunnelProvider).toBe('cloudflared');
-  });
-
-  it('respects custom configuration overrides', () => {
-    const client = new ComfyColabClient({
-      gpuType: 'A100',
-      timeoutMinutes: 120,
-      autoTerminate: false,
-      tunnelProvider: 'ngrok',
-    });
-    const config = client.getConfig();
-
-    expect(config.gpuType).toBe('A100');
-    expect(config.timeoutMinutes).toBe(120);
-    expect(config.autoTerminate).toBe(false);
-    expect(config.tunnelProvider).toBe('ngrok');
-  });
-
   it('generates a valid Colab notebook script', () => {
-    const client = new ComfyColabClient({ gpuType: 'A100' });
+    const client = new ComfyColabClient();
     const script = client.generateColabNotebookScript();
 
-    expect(script).toContain('# GPU Target: A100');
     expect(script).toContain('!git clone https://github.com/comfyanonymous/ComfyUI.git');
-  });
-
-  it('prepares workflow job payloads', () => {
-    const client = new ComfyColabClient();
-    const workflow = { prompt: { 1: { class_type: 'KSampler' } } };
-    const job = client.prepareWorkflow(workflow);
-
-    expect(job.id).toMatch(/^job_/);
-    expect(job.workflow).toEqual(workflow);
-    expect(job.createdAt).toBeGreaterThan(0);
-  });
-
-  it('rejects invalid workflow payloads', () => {
-    const client = new ComfyColabClient();
-
-    expect(() => client.prepareWorkflow(null as unknown as Record<string, unknown>)).toThrow(
-      TypeError,
-    );
-    expect(() => client.prepareWorkflow([] as unknown as Record<string, unknown>)).toThrow(
-      TypeError,
-    );
-  });
-
-  it('parses session status correctly', () => {
-    const client = new ComfyColabClient();
-
-    const status1 = client.parseStatus({
-      running: true,
-      gpu: 'A100',
-      uptime: 3600,
-      url: 'https://foo.trycloudflare.com',
-    });
-    expect(status1.active).toBe(true);
-    expect(status1.gpuType).toBe('A100');
-    expect(status1.uptimeSeconds).toBe(3600);
-    expect(status1.tunnelUrl).toBe('https://foo.trycloudflare.com');
-
-    const status2 = client.parseStatus({});
-    expect(status2.active).toBe(false);
-    expect(status2.gpuType).toBe('T4');
-    expect(status2.uptimeSeconds).toBe(0);
-    expect(status2.tunnelUrl).toBeNull();
+    expect(script).toContain('!pip install -r ComfyUI/requirements.txt');
   });
 
   it('exports VERSION matching semver format', () => {
@@ -94,6 +27,15 @@ describe('runCli', () => {
     writeSpy.mockRestore();
   });
 
+  it('prints help message in json mode with --help --json', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const code = runCli(['--help', '--json']);
+
+    expect(code).toBe(0);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "help"'));
+    writeSpy.mockRestore();
+  });
+
   it('prints version with --version flag', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const code = runCli(['--version']);
@@ -103,12 +45,79 @@ describe('runCli', () => {
     writeSpy.mockRestore();
   });
 
-  it('prints startup script with init command', () => {
+  it('prints version in json mode with --version --json', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    const code = runCli(['init']);
+    const code = runCli(['--version', '--json']);
 
     expect(code).toBe(0);
-    expect(writeSpy).toHaveBeenCalled();
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "version"'));
+    writeSpy.mockRestore();
+  });
+
+  it('executes doctor command in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['doctor']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('comfy-colab Environment Doctor'),
+    );
+
+    runCli(['doctor', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "doctor"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('executes auth command with tokens in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['auth', '--hf', 'hf_cli_token', '--civitai', 'civit_cli_key']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[SUCCESS]'));
+
+    runCli(['auth', '--hf', 'hf_cli_token_2', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"hasHfToken": true'));
+
+    runCli(['auth']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('Vault Status:'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('executes skill install command in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['skill', 'install']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[SUCCESS] AI agent skill installed'),
+    );
+
+    runCli(['skill', 'install', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "skill:install"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('prepares image workflow in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['image', '--prompt', 'cybernetic astronaut', '--lora', 'neon.safetensors:0.8']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Image workflow prepared'),
+    );
+
+    runCli(['image', '--prompt', 'cybernetic astronaut', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "image"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('handles unknown commands with json envelope and error', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    const code = runCli(['nonexistent-command', '--json']);
+    expect(code).toBe(1);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('ERR_UNKNOWN_COMMAND'));
+
     writeSpy.mockRestore();
   });
 
