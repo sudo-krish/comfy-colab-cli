@@ -80,6 +80,14 @@ describe('runCli', () => {
     runCli(['auth']);
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('Vault Status:'));
 
+    runCli(['setup']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Storage setup initialized'),
+    );
+
+    runCli(['setup', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "setup"'));
+
     writeSpy.mockRestore();
   });
 
@@ -185,6 +193,61 @@ describe('runCli', () => {
 
     runCli(['update', '--target', 'all', '--json']);
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "update"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('handles up, stop, and sessions commands in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['up', '--gpu', 'A100', '--ttl', '30', '--mount-drive']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Starting Colab environment'),
+    );
+
+    runCli(['up', '--gpu', 'L4', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "up"'));
+
+    runCli(['stop', '--session', 'my-sess']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] Stop signal sent'));
+
+    runCli(['stop', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "stop"'));
+
+    runCli(['sessions']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] Colab sessions queried'));
+
+    runCli(['sessions', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "sessions"'));
+
+    writeSpy.mockRestore();
+  });
+
+  it('handles template and run commands in text and json modes', () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    runCli(['template', 'list']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('Available templates:'));
+
+    runCli(['template', 'list', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "template:list"'));
+
+    runCli(['template', 'show', 'flux']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining("[INFO] Template 'flux'"));
+
+    runCli(['template', 'show', 'flux', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "template:show"'));
+
+    runCli(['template', 'show', 'nonexistent']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[ERROR] Template'));
+
+    runCli(['run', '--template', 'flux', '--prompt', 'a neon robot', '--ephemeral']);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[INFO] Run orchestration initiated'),
+    );
+
+    runCli(['run', '--template', 'flux', '--json']);
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('"command": "run"'));
 
     writeSpy.mockRestore();
   });

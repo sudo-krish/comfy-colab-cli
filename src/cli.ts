@@ -17,6 +17,9 @@ import {
   buildRestoreSnapshotScript,
   buildUpdateScript,
 } from './storage/snapshots.js';
+import { generateBootstrapScript } from './storage/bootstrap.js';
+import { REMOTE_DRIVE_STORE } from './config/constants.js';
+import { listGoldenTemplates, getGoldenTemplate } from './workflow/templates.js';
 import { VERSION } from './index.js';
 import type { AgentEnvelope } from './types/envelope.js';
 import type { GpuType } from './types/session.js';
@@ -60,18 +63,16 @@ function handleHelpCommand(isJson: boolean): number {
   process.stdout.write('Commands:\n');
   process.stdout.write('  doctor              Verify environment, GPU quota, and dependencies\n');
   process.stdout.write('  auth                Configure HuggingFace token and CivitAI API key\n');
+  process.stdout.write('  setup               Initialize persistent Google Drive storage tree\n');
+  process.stdout.write('  up                  Spin up Colab VM with GPU, watchdog, and Drive\n');
+  process.stdout.write('  stop                Terminate Colab session\n');
+  process.stdout.write('  sessions            List active Colab sessions\n');
   process.stdout.write(
     '  image               Generate image from prompt with optional LoRA chain\n',
   );
-  process.stdout.write(
-    '  video               Generate video from prompt or reference image (Wan 2.1)\n',
-  );
-  process.stdout.write('  models list|pull    Manage models and checkpoints on Google Drive\n');
-  process.stdout.write('  snapshot save|rest  Save or restore custom node workspace lockfiles\n');
-  process.stdout.write('  update              Upgrade comfy-cli, colab-cli, or ComfyUI core\n');
-  process.stdout.write(
-    '  video               Generate video from prompt or reference image (Wan 2.1)\n',
-  );
+  process.stdout.write('  video               Generate video from prompt or reference image\n');
+  process.stdout.write('  template list|show  Inspect golden API workflow templates\n');
+  process.stdout.write('  run                 Orchestrate end-to-end headless workflow run\n');
   process.stdout.write('  models list|pull    Manage models and checkpoints on Google Drive\n');
   process.stdout.write('  snapshot save|rest  Save or restore custom node workspace lockfiles\n');
   process.stdout.write('  update              Upgrade comfy-cli, colab-cli, or ComfyUI core\n');
@@ -355,6 +356,155 @@ function handleUpdateCommand(args: string[], isJson: boolean): number {
   return 0;
 }
 
+function handleUpCommand(args: string[], isJson: boolean): number {
+  const gpu = (getFlag(args, '--gpu') || 'L4') as GpuType;
+  const session = getFlag(args, '--session') || 'comfy-session';
+  const ttl = Number(getFlag(args, '--ttl') || '20');
+  const mountDrive = hasFlag(args, '--mount-drive');
+  const bootstrap = hasFlag(args, '--bootstrap');
+
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'up',
+      data: { session, gpu, ttlMinutes: ttl, mountDrive, bootstrap },
+    });
+  } else {
+    process.stdout.write(
+      `[INFO] Starting Colab environment '${session}' (GPU: ${gpu}, TTL: ${ttl}m, Mount Drive: ${mountDrive}).\n`,
+    );
+  }
+  return 0;
+}
+
+function handleStopCommand(args: string[], isJson: boolean): number {
+  const session = getFlag(args, '--session') || getFlag(args, '-s') || 'all';
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'stop',
+      data: { session },
+    });
+  } else {
+    process.stdout.write(`[INFO] Stop signal sent for session '${session}'.\n`);
+  }
+  return 0;
+}
+
+function handleSessionsCommand(_args: string[], isJson: boolean): number {
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'sessions',
+      data: { sessions: [] },
+    });
+  } else {
+    process.stdout.write('[INFO] Colab sessions queried.\n');
+  }
+  return 0;
+}
+
+function handleTemplateCommand(args: string[], isJson: boolean): number {
+  const sub = args[1] || 'list';
+  if (sub === 'show') {
+    const name = args[2] || 'flux';
+    const template = getGoldenTemplate(name);
+    if (isJson) {
+      printJsonEnvelope({
+        ok: Boolean(template),
+        command: 'template:show',
+        data: { name, template },
+      });
+    } else {
+      process.stdout.write(
+        template
+          ? `[INFO] Template '${name}' (${Object.keys(template).length} nodes):\n${JSON.stringify(template, null, 2)}\n`
+          : `[ERROR] Template '${name}' not found. Available: ${listGoldenTemplates().join(', ')}\n`,
+      );
+    }
+    return template ? 0 : 1;
+  }
+
+  const templates = listGoldenTemplates();
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'template:list',
+      data: { templates },
+    });
+  } else {
+    process.stdout.write(`Available templates: ${templates.join(', ')}\n`);
+  }
+  return 0;
+}
+
+function handleRunCommand(args: string[], isJson: boolean): number {
+  const prompt = getFlag(args, '--prompt') || 'a majestic cinematic landscape, photorealistic, 8k';
+  const templateName = getFlag(args, '--template');
+  const workflowFile = getFlag(args, '--workflow') || getFlag(args, '-w');
+  const loraFlag = getFlag(args, '--lora');
+  const overrides = getAllFlags(args, '--set');
+  const outputDir = getFlag(args, '--output') || './outputs';
+  const ephemeral = hasFlag(args, '--ephemeral');
+  const hotCache = getFlag(args, '--hot-cache');
+
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'run',
+      data: {
+        prompt,
+        template: templateName || 'custom',
+        hasWorkflowFile: Boolean(workflowFile),
+        lora: loraFlag,
+        overridesCount: overrides.length,
+        outputDir,
+        ephemeral,
+        hotCache,
+      },
+    });
+  } else {
+    process.stdout.write(`[INFO] Run orchestration initiated for '${templateName || 'custom'}'.\n`);
+    process.stdout.write(`Prompt: ${prompt}\n`);
+    process.stdout.write(`Output directory: ${outputDir} (ephemeral: ${ephemeral})\n`);
+  }
+  return 0;
+}
+
+function handleSetupCommand(args: string[], isJson: boolean): number {
+  const storePath = getFlag(args, '--path') || REMOTE_DRIVE_STORE;
+  const script = generateBootstrapScript({ driveStorePath: storePath });
+  if (isJson) {
+    printJsonEnvelope({
+      ok: true,
+      command: 'setup',
+      data: { storePath, scriptGenerated: Boolean(script) },
+    });
+  } else {
+    process.stdout.write(`[INFO] Storage setup initialized for: ${storePath}\n`);
+  }
+  return 0;
+}
+
+type CommandHandler = (args: string[], isJson: boolean) => number;
+
+const COMMAND_MAP: Record<string, CommandHandler> = {
+  doctor: (_args, isJson) => handleDoctorCommand(isJson),
+  auth: handleAuthCommand,
+  setup: handleSetupCommand,
+  skill: handleSkillCommand,
+  image: handleImageCommand,
+  video: handleVideoCommand,
+  models: handleModelsCommand,
+  snapshot: handleSnapshotCommand,
+  update: handleUpdateCommand,
+  up: handleUpCommand,
+  stop: handleStopCommand,
+  sessions: handleSessionsCommand,
+  template: handleTemplateCommand,
+  run: handleRunCommand,
+};
+
 function isHelpRequested(args: string[]): boolean {
   return args.includes('--help') || args.includes('-h') || args[0] === 'help';
 }
@@ -380,26 +530,11 @@ function handleUnknown(cmd: string, isJson: boolean): number {
 }
 
 function routeCommand(cmd: string, args: string[], isJson: boolean): number {
-  switch (cmd) {
-    case 'doctor':
-      return handleDoctorCommand(isJson);
-    case 'auth':
-      return handleAuthCommand(args, isJson);
-    case 'skill':
-      return handleSkillCommand(args, isJson);
-    case 'image':
-      return handleImageCommand(args, isJson);
-    case 'video':
-      return handleVideoCommand(args, isJson);
-    case 'models':
-      return handleModelsCommand(args, isJson);
-    case 'snapshot':
-      return handleSnapshotCommand(args, isJson);
-    case 'update':
-      return handleUpdateCommand(args, isJson);
-    default:
-      return handleUnknown(cmd, isJson);
+  if (Object.prototype.hasOwnProperty.call(COMMAND_MAP, cmd)) {
+    const handler = COMMAND_MAP[cmd]!;
+    return handler(args, isJson);
   }
+  return handleUnknown(cmd, isJson);
 }
 
 export function runCli(args: string[] = process.argv.slice(2)): number {

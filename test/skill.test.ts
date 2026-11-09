@@ -10,6 +10,9 @@ describe('Skill Installer', () => {
     expect(md).toContain('name: comfy-colab');
     expect(md).toContain('--json');
     expect(md).toContain('comfy-colab doctor --json');
+    expect(md).toContain('Wan 2.1');
+    expect(md).toContain('--hot-cache');
+    expect(md).toContain('template show flux');
   });
 
   it('installs skill into target directory', () => {
